@@ -1,0 +1,2741 @@
+{
+  "kind": "saved_raw_model_responses_no_gold",
+  "cases": [
+    {
+      "question": {
+        "question_id": "118",
+        "db_id": "codebase_community",
+        "question": "What is the display name of the user who last edited the post \"Examples for teaching: Correlation does not mean causation\"?",
+        "evidence": ""
+      },
+      "before": "SELECT u.DisplayName\nFROM posts AS p\nJOIN users AS u ON u.Id = p.LastEditorUserId\nWHERE p.Title = 'Examples for teaching: Correlation does not mean causation'",
+      "schema": {
+        "badges": {
+          "columns": {
+            "Id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "UserId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "Name": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "Date": {
+              "type": "DATETIME",
+              "pk": false
+            }
+          },
+          "foreign_keys": [
+            {
+              "column": "UserId",
+              "table": "users",
+              "target": "Id"
+            }
+          ]
+        },
+        "comments": {
+          "columns": {
+            "Id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "PostId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "Score": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "Text": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "CreationDate": {
+              "type": "DATETIME",
+              "pk": false
+            },
+            "UserId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "UserDisplayName": {
+              "type": "TEXT",
+              "pk": false
+            }
+          },
+          "foreign_keys": [
+            {
+              "column": "UserId",
+              "table": "users",
+              "target": "Id"
+            },
+            {
+              "column": "PostId",
+              "table": "posts",
+              "target": "Id"
+            }
+          ]
+        },
+        "postHistory": {
+          "columns": {
+            "Id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "PostHistoryTypeId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "PostId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "RevisionGUID": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "CreationDate": {
+              "type": "DATETIME",
+              "pk": false
+            },
+            "UserId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "Text": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "Comment": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "UserDisplayName": {
+              "type": "TEXT",
+              "pk": false
+            }
+          },
+          "foreign_keys": [
+            {
+              "column": "UserId",
+              "table": "users",
+              "target": "Id"
+            },
+            {
+              "column": "PostId",
+              "table": "posts",
+              "target": "Id"
+            }
+          ]
+        },
+        "postLinks": {
+          "columns": {
+            "Id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "CreationDate": {
+              "type": "DATETIME",
+              "pk": false
+            },
+            "PostId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "RelatedPostId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "LinkTypeId": {
+              "type": "INTEGER",
+              "pk": false
+            }
+          },
+          "foreign_keys": [
+            {
+              "column": "RelatedPostId",
+              "table": "posts",
+              "target": "Id"
+            },
+            {
+              "column": "PostId",
+              "table": "posts",
+              "target": "Id"
+            }
+          ]
+        },
+        "posts": {
+          "columns": {
+            "Id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "PostTypeId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "AcceptedAnswerId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "CreaionDate": {
+              "type": "DATETIME",
+              "pk": false
+            },
+            "Score": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "ViewCount": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "Body": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "OwnerUserId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "LasActivityDate": {
+              "type": "DATETIME",
+              "pk": false
+            },
+            "Title": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "Tags": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "AnswerCount": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "CommentCount": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "FavoriteCount": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "LastEditorUserId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "LastEditDate": {
+              "type": "DATETIME",
+              "pk": false
+            },
+            "CommunityOwnedDate": {
+              "type": "DATETIME",
+              "pk": false
+            },
+            "ParentId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "ClosedDate": {
+              "type": "DATETIME",
+              "pk": false
+            },
+            "OwnerDisplayName": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "LastEditorDisplayName": {
+              "type": "TEXT",
+              "pk": false
+            }
+          },
+          "foreign_keys": [
+            {
+              "column": "ParentId",
+              "table": "posts",
+              "target": "Id"
+            },
+            {
+              "column": "OwnerUserId",
+              "table": "users",
+              "target": "Id"
+            },
+            {
+              "column": "LastEditorUserId",
+              "table": "users",
+              "target": "Id"
+            }
+          ]
+        },
+        "tags": {
+          "columns": {
+            "Id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "TagName": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "Count": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "ExcerptPostId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "WikiPostId": {
+              "type": "INTEGER",
+              "pk": false
+            }
+          },
+          "foreign_keys": [
+            {
+              "column": "ExcerptPostId",
+              "table": "posts",
+              "target": "Id"
+            }
+          ]
+        },
+        "users": {
+          "columns": {
+            "Id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "Reputation": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "CreationDate": {
+              "type": "DATETIME",
+              "pk": false
+            },
+            "DisplayName": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "LastAccessDate": {
+              "type": "DATETIME",
+              "pk": false
+            },
+            "WebsiteUrl": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "Location": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "AboutMe": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "Views": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "UpVotes": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "DownVotes": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "AccountId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "Age": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "ProfileImageUrl": {
+              "type": "TEXT",
+              "pk": false
+            }
+          },
+          "foreign_keys": []
+        },
+        "votes": {
+          "columns": {
+            "Id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "PostId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "VoteTypeId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "CreationDate": {
+              "type": "DATE",
+              "pk": false
+            },
+            "UserId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "BountyAmount": {
+              "type": "INTEGER",
+              "pk": false
+            }
+          },
+          "foreign_keys": [
+            {
+              "column": "UserId",
+              "table": "users",
+              "target": "Id"
+            },
+            {
+              "column": "PostId",
+              "table": "posts",
+              "target": "Id"
+            }
+          ]
+        }
+      },
+      "responses": [
+        {
+          "purpose": "output_requirements",
+          "raw": "{\"status\":\"clear\",\"requested\":[{\"id\":\"o1\",\"source\":\"question\",\"quote\":\"display name of the user who last edited the post\",\"description\":\"Display name of the last editor of the specified post\",\"kind\":\"attribute\",\"support\":\"explicit\",\"representation\":\"not_applicable\"}],\"constraints\":[{\"kind\":\"filter\",\"source\":\"question\",\"quote\":\"the post \\\"Examples for teaching: Correlation does not mean causation\\\"\",\"description\":\"Restrict to the post with this title\"},{\"kind\":\"filter\",\"source\":\"question\",\"quote\":\"last edited\",\"description\":\"Restrict to the most recent edit of that post\"}],\"ambiguities\":[]}"
+        },
+        {
+          "purpose": "semantic_review",
+          "raw": "{\"action\":\"accept\",\"requirements\":[{\"id\":\"r1\",\"source\":\"question\",\"quote\":\"display name of the user who last edited the post\",\"check\":\"output\",\"status\":\"pass\",\"sql_fragment\":\"u.DisplayName\",\"reason\":\"Selects display name of last editor\"},{\"id\":\"r2\",\"source\":\"question\",\"quote\":\"the post \\\"Examples for teaching: Correlation does not mean causation\\\"\",\"check\":\"filters\",\"status\":\"pass\",\"sql_fragment\":\"p.Title = 'Examples for teaching: Correlation does not mean causation'\",\"reason\":\"Filters by exact title\"},{\"id\":\"r3\",\"source\":\"question\",\"quote\":\"last edited\",\"check\":\"filters\",\"status\":\"pass\",\"sql_fragment\":\"JOIN users AS u ON u.Id = p.LastEditorUserId\",\"reason\":\"Uses posts.LastEditorUserId to identify last editor\"},{\"id\":\"r4\",\"source\":\"schema_fk_3\",\"quote\":\"FK: LastEditorUserId -> users.Id\",\"check\":\"joins\",\"status\":\"pass\",\"sql_fragment\":\"JOIN users AS u ON u.Id = p.LastEditorUserId\",\"reason\":\"Correct FK join\"}],\"checks\":{\"output\":{\"status\":\"pass\",\"reason\":\"Single requested column mapped\"},\"filters\":{\"status\":\"pass\",\"reason\":\"Title filter present\"},\"joins\":{\"status\":\"pass\",\"reason\":\"Correct FK join\"},\"aggregation\":{\"status\":\"pass\",\"reason\":\"not required\"},\"ordering\":{\"status\":\"pass\",\"reason\":\"not required\"},\"limit\":{\"status\":\"pass\",\"reason\":\"not required\"}},\"changes\":[],\"output_contract\":{\"columns\":[{\"position\":1,\"expression\":\"u.DisplayName\",\"disposition\":\"required\",\"requested\":[\"o1\"],\"reason\":\"Requested display name\",\"basis\":{\"source\":\"question\",\"quote\":\"display name of the user who last edited the post\"}}]},\"projection_only\":false}"
+        }
+      ],
+      "provenance": {
+        "path": "output\\issue123-live-ui-20261110\\semantic-pilot-deepseek-v7-core6-q118-20261111\\trace.jsonl",
+        "sha256": "a435ed0f7afdf9d1448e688e5423e7a56544dbed101d46fb2185890fabc50a35"
+      }
+    },
+    {
+      "question": {
+        "question_id": "165",
+        "db_id": "european_football_2",
+        "question": "List the ten players taller than 180 cm with the highest mean recorded heading accuracy, highest first. Break mean ties by player API ID.",
+        "evidence": ""
+      },
+      "before": "SELECT p.player_name, p.player_api_id, AVG(pa.heading_accuracy) AS mean_heading\nFROM Player AS p\nJOIN Player_Attributes AS pa ON pa.player_api_id = p.player_api_id\nWHERE p.height > 180\nGROUP BY p.player_api_id\nORDER BY mean_heading DESC, p.player_api_id ASC\nLIMIT 10",
+      "schema": {
+        "Country": {
+          "columns": {
+            "id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "name": {
+              "type": "TEXT",
+              "pk": false
+            }
+          },
+          "foreign_keys": []
+        },
+        "League": {
+          "columns": {
+            "id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "country_id": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "name": {
+              "type": "TEXT",
+              "pk": false
+            }
+          },
+          "foreign_keys": [
+            {
+              "column": "country_id",
+              "table": "country",
+              "target": "id"
+            }
+          ]
+        },
+        "Match": {
+          "columns": {
+            "id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "country_id": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "league_id": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "season": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "stage": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "date": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "match_api_id": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_team_api_id": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_team_api_id": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_team_goal": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_team_goal": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_player_X1": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_player_X2": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_player_X3": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_player_X4": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_player_X5": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_player_X6": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_player_X7": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_player_X8": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_player_X9": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_player_X10": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_player_X11": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_player_X1": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_player_X2": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_player_X3": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_player_X4": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_player_X5": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_player_X6": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_player_X7": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_player_X8": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_player_X9": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_player_X10": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_player_X11": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_player_Y1": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_player_Y2": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_player_Y3": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_player_Y4": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_player_Y5": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_player_Y6": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_player_Y7": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_player_Y8": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_player_Y9": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_player_Y10": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_player_Y11": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_player_Y1": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_player_Y2": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_player_Y3": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_player_Y4": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_player_Y5": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_player_Y6": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_player_Y7": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_player_Y8": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_player_Y9": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_player_Y10": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_player_Y11": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_player_1": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_player_2": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_player_3": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_player_4": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_player_5": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_player_6": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_player_7": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_player_8": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_player_9": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_player_10": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "home_player_11": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_player_1": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_player_2": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_player_3": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_player_4": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_player_5": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_player_6": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_player_7": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_player_8": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_player_9": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_player_10": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "away_player_11": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "goal": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "shoton": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "shotoff": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "foulcommit": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "card": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "cross": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "corner": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "possession": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "B365H": {
+              "type": "REAL",
+              "pk": false
+            },
+            "B365D": {
+              "type": "REAL",
+              "pk": false
+            },
+            "B365A": {
+              "type": "REAL",
+              "pk": false
+            },
+            "BWH": {
+              "type": "REAL",
+              "pk": false
+            },
+            "BWD": {
+              "type": "REAL",
+              "pk": false
+            },
+            "BWA": {
+              "type": "REAL",
+              "pk": false
+            },
+            "IWH": {
+              "type": "REAL",
+              "pk": false
+            },
+            "IWD": {
+              "type": "REAL",
+              "pk": false
+            },
+            "IWA": {
+              "type": "REAL",
+              "pk": false
+            },
+            "LBH": {
+              "type": "REAL",
+              "pk": false
+            },
+            "LBD": {
+              "type": "REAL",
+              "pk": false
+            },
+            "LBA": {
+              "type": "REAL",
+              "pk": false
+            },
+            "PSH": {
+              "type": "REAL",
+              "pk": false
+            },
+            "PSD": {
+              "type": "REAL",
+              "pk": false
+            },
+            "PSA": {
+              "type": "REAL",
+              "pk": false
+            },
+            "WHH": {
+              "type": "REAL",
+              "pk": false
+            },
+            "WHD": {
+              "type": "REAL",
+              "pk": false
+            },
+            "WHA": {
+              "type": "REAL",
+              "pk": false
+            },
+            "SJH": {
+              "type": "REAL",
+              "pk": false
+            },
+            "SJD": {
+              "type": "REAL",
+              "pk": false
+            },
+            "SJA": {
+              "type": "REAL",
+              "pk": false
+            },
+            "VCH": {
+              "type": "REAL",
+              "pk": false
+            },
+            "VCD": {
+              "type": "REAL",
+              "pk": false
+            },
+            "VCA": {
+              "type": "REAL",
+              "pk": false
+            },
+            "GBH": {
+              "type": "REAL",
+              "pk": false
+            },
+            "GBD": {
+              "type": "REAL",
+              "pk": false
+            },
+            "GBA": {
+              "type": "REAL",
+              "pk": false
+            },
+            "BSH": {
+              "type": "REAL",
+              "pk": false
+            },
+            "BSD": {
+              "type": "REAL",
+              "pk": false
+            },
+            "BSA": {
+              "type": "REAL",
+              "pk": false
+            }
+          },
+          "foreign_keys": [
+            {
+              "column": "away_player_11",
+              "table": "Player",
+              "target": "player_api_id"
+            },
+            {
+              "column": "away_player_10",
+              "table": "Player",
+              "target": "player_api_id"
+            },
+            {
+              "column": "away_player_9",
+              "table": "Player",
+              "target": "player_api_id"
+            },
+            {
+              "column": "away_player_8",
+              "table": "Player",
+              "target": "player_api_id"
+            },
+            {
+              "column": "away_player_7",
+              "table": "Player",
+              "target": "player_api_id"
+            },
+            {
+              "column": "away_player_6",
+              "table": "Player",
+              "target": "player_api_id"
+            },
+            {
+              "column": "away_player_5",
+              "table": "Player",
+              "target": "player_api_id"
+            },
+            {
+              "column": "away_player_4",
+              "table": "Player",
+              "target": "player_api_id"
+            },
+            {
+              "column": "away_player_3",
+              "table": "Player",
+              "target": "player_api_id"
+            },
+            {
+              "column": "away_player_2",
+              "table": "Player",
+              "target": "player_api_id"
+            },
+            {
+              "column": "away_player_1",
+              "table": "Player",
+              "target": "player_api_id"
+            },
+            {
+              "column": "home_player_11",
+              "table": "Player",
+              "target": "player_api_id"
+            },
+            {
+              "column": "home_player_10",
+              "table": "Player",
+              "target": "player_api_id"
+            },
+            {
+              "column": "home_player_9",
+              "table": "Player",
+              "target": "player_api_id"
+            },
+            {
+              "column": "home_player_8",
+              "table": "Player",
+              "target": "player_api_id"
+            },
+            {
+              "column": "home_player_7",
+              "table": "Player",
+              "target": "player_api_id"
+            },
+            {
+              "column": "home_player_6",
+              "table": "Player",
+              "target": "player_api_id"
+            },
+            {
+              "column": "home_player_5",
+              "table": "Player",
+              "target": "player_api_id"
+            },
+            {
+              "column": "home_player_4",
+              "table": "Player",
+              "target": "player_api_id"
+            },
+            {
+              "column": "home_player_3",
+              "table": "Player",
+              "target": "player_api_id"
+            },
+            {
+              "column": "home_player_2",
+              "table": "Player",
+              "target": "player_api_id"
+            },
+            {
+              "column": "home_player_1",
+              "table": "Player",
+              "target": "player_api_id"
+            },
+            {
+              "column": "away_team_api_id",
+              "table": "Team",
+              "target": "team_api_id"
+            },
+            {
+              "column": "home_team_api_id",
+              "table": "Team",
+              "target": "team_api_id"
+            },
+            {
+              "column": "league_id",
+              "table": "League",
+              "target": null
+            },
+            {
+              "column": "country_id",
+              "table": "Country",
+              "target": null
+            }
+          ]
+        },
+        "Player": {
+          "columns": {
+            "id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "player_api_id": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "player_name": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "player_fifa_api_id": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "birthday": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "height": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "weight": {
+              "type": "INTEGER",
+              "pk": false
+            }
+          },
+          "foreign_keys": []
+        },
+        "Player_Attributes": {
+          "columns": {
+            "id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "player_fifa_api_id": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "player_api_id": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "date": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "overall_rating": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "potential": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "preferred_foot": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "attacking_work_rate": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "defensive_work_rate": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "crossing": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "finishing": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "heading_accuracy": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "short_passing": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "volleys": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "dribbling": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "curve": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "free_kick_accuracy": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "long_passing": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "ball_control": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "acceleration": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "sprint_speed": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "agility": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "reactions": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "balance": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "shot_power": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "jumping": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "stamina": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "strength": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "long_shots": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "aggression": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "interceptions": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "positioning": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "vision": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "penalties": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "marking": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "standing_tackle": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "sliding_tackle": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "gk_diving": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "gk_handling": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "gk_kicking": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "gk_positioning": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "gk_reflexes": {
+              "type": "INTEGER",
+              "pk": false
+            }
+          },
+          "foreign_keys": [
+            {
+              "column": "player_api_id",
+              "table": "Player",
+              "target": "player_api_id"
+            },
+            {
+              "column": "player_fifa_api_id",
+              "table": "Player",
+              "target": "player_fifa_api_id"
+            }
+          ]
+        },
+        "Team": {
+          "columns": {
+            "id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "team_api_id": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "team_fifa_api_id": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "team_long_name": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "team_short_name": {
+              "type": "TEXT",
+              "pk": false
+            }
+          },
+          "foreign_keys": []
+        },
+        "Team_Attributes": {
+          "columns": {
+            "id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "team_fifa_api_id": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "team_api_id": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "date": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "buildUpPlaySpeed": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "buildUpPlaySpeedClass": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "buildUpPlayDribbling": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "buildUpPlayDribblingClass": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "buildUpPlayPassing": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "buildUpPlayPassingClass": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "buildUpPlayPositioningClass": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "chanceCreationPassing": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "chanceCreationPassingClass": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "chanceCreationCrossing": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "chanceCreationCrossingClass": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "chanceCreationShooting": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "chanceCreationShootingClass": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "chanceCreationPositioningClass": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "defencePressure": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "defencePressureClass": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "defenceAggression": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "defenceAggressionClass": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "defenceTeamWidth": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "defenceTeamWidthClass": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "defenceDefenderLineClass": {
+              "type": "TEXT",
+              "pk": false
+            }
+          },
+          "foreign_keys": [
+            {
+              "column": "team_api_id",
+              "table": "Team",
+              "target": "team_api_id"
+            },
+            {
+              "column": "team_fifa_api_id",
+              "table": "Team",
+              "target": "team_fifa_api_id"
+            }
+          ]
+        }
+      },
+      "responses": [
+        {
+          "purpose": "output_requirements",
+          "raw": "{\"status\":\"clear\",\"requested\":[{\"id\":\"o1\",\"source\":\"question\",\"quote\":\"List the ten players taller than 180 cm with the highest mean recorded heading accuracy, highest first.\",\"description\":\"Players meeting height and ranking criteria\",\"kind\":\"entity\",\"support\":\"explicit\",\"representation\":\"unspecified\"},{\"id\":\"o2\",\"source\":\"question\",\"quote\":\"Break mean ties by player API ID.\",\"description\":\"Player API ID used as tie-breaker\",\"kind\":\"attribute\",\"support\":\"explicit\",\"representation\":\"not_applicable\"}],\"constraints\":[{\"kind\":\"filter\",\"source\":\"question\",\"quote\":\"taller than 180 cm\",\"description\":\"Only players taller than 180 cm\"},{\"kind\":\"ordering\",\"source\":\"question\",\"quote\":\"highest mean recorded heading accuracy, highest first\",\"description\":\"Order by mean heading accuracy descending\"},{\"kind\":\"ties\",\"source\":\"question\",\"quote\":\"Break mean ties by player API ID\",\"description\":\"Tie-break equal means by player API ID\"},{\"kind\":\"limit\",\"source\":\"question\",\"quote\":\"ten players\",\"description\":\"Return at most ten players\"},{\"kind\":\"aggregation\",\"source\":\"question\",\"quote\":\"mean recorded heading accuracy\",\"description\":\"Aggregate heading accuracy as a mean per player\"}],\"ambiguities\":[\"Player entity representation is unspecified (names vs IDs vs other fields); API ID is requested only as a tie-breaker, not as a display field.\"]}"
+        }
+      ],
+      "provenance": {
+        "path": "output\\issue123-live-ui-20261110\\semantic-pilot-deepseek-v7-core6-q165-20261111\\trace.jsonl",
+        "sha256": "98b5155be4f2de4a80d65a3c0dbb18449736628fc2efe1757b497ad818a84af3"
+      }
+    },
+    {
+      "question": {
+        "question_id": "129",
+        "db_id": "codebase_community",
+        "question": "I'm profiling how seasoned our Organizer badge holders in Germany are. Among the users who earned the Organizer badge and are based in Germany, how many had already earned 5 badges before they got the Organizer badge? Just the count, please. Note: \"before\" means strictly earlier - badges earned at the same moment as the Organizer badge don't count toward the 5, and the Organizer badge itself doesn't count as one of the 5.",
+        "evidence": "Organizer badge: the badge whose name is Organizer."
+      },
+      "before": "SELECT COUNT(*) AS UserCount\nFROM (\n  SELECT o.UserId, o.OrganizerDate,\n         (SELECT COUNT(*) FROM badges AS b2\n          WHERE b2.UserId = o.UserId\n            AND b2.Date < o.OrganizerDate\n            AND b2.Name <> 'Organizer') AS PriorBadges\n  FROM (SELECT b.UserId, b.Date AS OrganizerDate\n        FROM badges AS b\n        JOIN users AS u ON u.Id = b.UserId\n        WHERE b.Name = 'Organizer' AND u.Location LIKE '%Germany%') AS o\n) AS t\nWHERE t.PriorBadges >= 5",
+      "schema": {
+        "badges": {
+          "columns": {
+            "Id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "UserId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "Name": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "Date": {
+              "type": "DATETIME",
+              "pk": false
+            }
+          },
+          "foreign_keys": [
+            {
+              "column": "UserId",
+              "table": "users",
+              "target": "Id"
+            }
+          ]
+        },
+        "comments": {
+          "columns": {
+            "Id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "PostId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "Score": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "Text": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "CreationDate": {
+              "type": "DATETIME",
+              "pk": false
+            },
+            "UserId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "UserDisplayName": {
+              "type": "TEXT",
+              "pk": false
+            }
+          },
+          "foreign_keys": [
+            {
+              "column": "UserId",
+              "table": "users",
+              "target": "Id"
+            },
+            {
+              "column": "PostId",
+              "table": "posts",
+              "target": "Id"
+            }
+          ]
+        },
+        "postHistory": {
+          "columns": {
+            "Id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "PostHistoryTypeId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "PostId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "RevisionGUID": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "CreationDate": {
+              "type": "DATETIME",
+              "pk": false
+            },
+            "UserId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "Text": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "Comment": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "UserDisplayName": {
+              "type": "TEXT",
+              "pk": false
+            }
+          },
+          "foreign_keys": [
+            {
+              "column": "UserId",
+              "table": "users",
+              "target": "Id"
+            },
+            {
+              "column": "PostId",
+              "table": "posts",
+              "target": "Id"
+            }
+          ]
+        },
+        "postLinks": {
+          "columns": {
+            "Id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "CreationDate": {
+              "type": "DATETIME",
+              "pk": false
+            },
+            "PostId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "RelatedPostId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "LinkTypeId": {
+              "type": "INTEGER",
+              "pk": false
+            }
+          },
+          "foreign_keys": [
+            {
+              "column": "RelatedPostId",
+              "table": "posts",
+              "target": "Id"
+            },
+            {
+              "column": "PostId",
+              "table": "posts",
+              "target": "Id"
+            }
+          ]
+        },
+        "posts": {
+          "columns": {
+            "Id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "PostTypeId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "AcceptedAnswerId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "CreaionDate": {
+              "type": "DATETIME",
+              "pk": false
+            },
+            "Score": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "ViewCount": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "Body": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "OwnerUserId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "LasActivityDate": {
+              "type": "DATETIME",
+              "pk": false
+            },
+            "Title": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "Tags": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "AnswerCount": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "CommentCount": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "FavoriteCount": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "LastEditorUserId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "LastEditDate": {
+              "type": "DATETIME",
+              "pk": false
+            },
+            "CommunityOwnedDate": {
+              "type": "DATETIME",
+              "pk": false
+            },
+            "ParentId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "ClosedDate": {
+              "type": "DATETIME",
+              "pk": false
+            },
+            "OwnerDisplayName": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "LastEditorDisplayName": {
+              "type": "TEXT",
+              "pk": false
+            }
+          },
+          "foreign_keys": [
+            {
+              "column": "ParentId",
+              "table": "posts",
+              "target": "Id"
+            },
+            {
+              "column": "OwnerUserId",
+              "table": "users",
+              "target": "Id"
+            },
+            {
+              "column": "LastEditorUserId",
+              "table": "users",
+              "target": "Id"
+            }
+          ]
+        },
+        "tags": {
+          "columns": {
+            "Id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "TagName": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "Count": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "ExcerptPostId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "WikiPostId": {
+              "type": "INTEGER",
+              "pk": false
+            }
+          },
+          "foreign_keys": [
+            {
+              "column": "ExcerptPostId",
+              "table": "posts",
+              "target": "Id"
+            }
+          ]
+        },
+        "users": {
+          "columns": {
+            "Id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "Reputation": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "CreationDate": {
+              "type": "DATETIME",
+              "pk": false
+            },
+            "DisplayName": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "LastAccessDate": {
+              "type": "DATETIME",
+              "pk": false
+            },
+            "WebsiteUrl": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "Location": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "AboutMe": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "Views": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "UpVotes": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "DownVotes": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "AccountId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "Age": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "ProfileImageUrl": {
+              "type": "TEXT",
+              "pk": false
+            }
+          },
+          "foreign_keys": []
+        },
+        "votes": {
+          "columns": {
+            "Id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "PostId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "VoteTypeId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "CreationDate": {
+              "type": "DATE",
+              "pk": false
+            },
+            "UserId": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "BountyAmount": {
+              "type": "INTEGER",
+              "pk": false
+            }
+          },
+          "foreign_keys": [
+            {
+              "column": "UserId",
+              "table": "users",
+              "target": "Id"
+            },
+            {
+              "column": "PostId",
+              "table": "posts",
+              "target": "Id"
+            }
+          ]
+        }
+      },
+      "responses": [
+        {
+          "purpose": "output_requirements",
+          "raw": "{\"status\":\"clear\",\"requested\":[{\"id\":\"o1\",\"source\":\"question\",\"quote\":\"how many had already earned 5 badges before they got the Organizer badge? Just the count, please.\",\"description\":\"Count of German Organizer badge holders who had at least 5 other badges earned strictly before the Organizer badge\",\"kind\":\"measure\",\"support\":\"explicit\",\"representation\":\"not_applicable\"}],\"constraints\":[{\"kind\":\"filter\",\"source\":\"question\",\"quote\":\"users who earned the Organizer badge and are based in Germany\",\"description\":\"Users must hold the Organizer badge and be located in Germany\"},{\"kind\":\"filter\",\"source\":\"question\",\"quote\":\"had already earned 5 badges before they got the Organizer badge\",\"description\":\"At least 5 badges earned strictly earlier than the Organizer badge\"},{\"kind\":\"filter\",\"source\":\"question\",\"quote\":\"badges earned at the same moment as the Organizer badge don't count toward the 5, and the Organizer badge itself doesn't count as one of the 5\",\"description\":\"Exclude same-timestamp badges and the Organizer badge from the prior-badge count\"},{\"kind\":\"aggregation\",\"source\":\"question\",\"quote\":\"how many\",\"description\":\"Count qualifying users\"}],\"ambiguities\":[]}"
+        },
+        {
+          "purpose": "semantic_review",
+          "raw": "{\"action\":\"accept\",\"requirements\":[{\"id\":\"r1\",\"source\":\"question\",\"quote\":\"users who earned the Organizer badge and are based in Germany\",\"check\":\"filters\",\"status\":\"pass\",\"sql_fragment\":\"WHERE b.Name = 'Organizer' AND u.Location LIKE '%Germany%'\",\"reason\":\"Organizer badge and Germany location filtered\"},{\"id\":\"r2\",\"source\":\"question\",\"quote\":\"had already earned 5 badges before they got the Organizer badge\",\"check\":\"filters\",\"status\":\"pass\",\"sql_fragment\":\"WHERE t.PriorBadges >= 5\",\"reason\":\"at least 5 prior badges\"},{\"id\":\"r3\",\"source\":\"question\",\"quote\":\"badges earned at the same moment as the Organizer badge don't count toward the 5, and the Organizer badge itself doesn't count as one of the 5\",\"check\":\"filters\",\"status\":\"pass\",\"sql_fragment\":\"b2.Date < o.OrganizerDate AND b2.Name <> 'Organizer'\",\"reason\":\"strict earlier and excludes Organizer\"},{\"id\":\"r4\",\"source\":\"question\",\"quote\":\"how many\",\"check\":\"aggregation\",\"status\":\"pass\",\"sql_fragment\":\"COUNT(*) AS UserCount\",\"reason\":\"counts qualifying users\"},{\"id\":\"r5\",\"source\":\"evidence\",\"quote\":\"Organizer badge: the badge whose name is Organizer.\",\"check\":\"filters\",\"status\":\"pass\",\"sql_fragment\":\"b.Name = 'Organizer'\",\"reason\":\"matches documented name\"}],\"checks\":{\"output\":{\"status\":\"pass\",\"reason\":\"single count column matches o1\"},\"filters\":{\"status\":\"pass\",\"reason\":\"all filters present\"},\"joins\":{\"status\":\"pass\",\"reason\":\"badges joined to users\"},\"aggregation\":{\"status\":\"pass\",\"reason\":\"counts users\"},\"ordering\":{\"status\":\"pass\",\"reason\":\"not required\"},\"limit\":{\"status\":\"pass\",\"reason\":\"not required\"}},\"changes\":[],\"output_contract\":{\"columns\":[{\"position\":1,\"expression\":\"COUNT(*) AS UserCount\",\"disposition\":\"required\",\"requested\":[\"o1\"],\"reason\":\"the requested count\",\"basis\":{\"source\":\"question\",\"quote\":\"Just the count, please.\"}}]},\"projection_only\":false}"
+        }
+      ],
+      "provenance": {
+        "path": "output\\issue123-live-ui-20261110\\semantic-pilot-deepseek-v7-core6-q129-20261111\\trace.jsonl",
+        "sha256": "faebdda030239ca08738bf1e1a6fefb50f03984158b6d434559cf5adfd326f7d"
+      }
+    },
+    {
+      "question": {
+        "question_id": "308",
+        "db_id": "student_club",
+        "question": "How many majors offered by the college that offers Tyler Hewitt's major currently have no enrolled members in the club? Count every major that college offers, by major name.",
+        "evidence": "Enrolled members are the people recorded in the club's membership list."
+      },
+      "before": "SELECT COUNT(*)\nFROM major AS m\nWHERE m.college = (\n  SELECT m2.college\n  FROM member AS mem\n  JOIN major AS m2 ON mem.link_to_major = m2.major_id\n  WHERE mem.first_name = 'Tyler' AND mem.last_name = 'Hewitt'\n)\nAND m.major_id NOT IN (\n  SELECT mem.link_to_major\n  FROM member AS mem\n  WHERE mem.link_to_major IS NOT NULL\n)",
+      "schema": {
+        "attendance": {
+          "columns": {
+            "link_to_event": {
+              "type": "TEXT",
+              "pk": true
+            },
+            "link_to_member": {
+              "type": "TEXT",
+              "pk": true
+            }
+          },
+          "foreign_keys": [
+            {
+              "column": "link_to_member",
+              "table": "member",
+              "target": "member_id"
+            },
+            {
+              "column": "link_to_event",
+              "table": "event",
+              "target": "event_id"
+            }
+          ]
+        },
+        "budget": {
+          "columns": {
+            "budget_id": {
+              "type": "TEXT",
+              "pk": true
+            },
+            "category": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "spent": {
+              "type": "REAL",
+              "pk": false
+            },
+            "remaining": {
+              "type": "REAL",
+              "pk": false
+            },
+            "amount": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "event_status": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "link_to_event": {
+              "type": "TEXT",
+              "pk": false
+            }
+          },
+          "foreign_keys": [
+            {
+              "column": "link_to_event",
+              "table": "event",
+              "target": "event_id"
+            }
+          ]
+        },
+        "event": {
+          "columns": {
+            "event_id": {
+              "type": "TEXT",
+              "pk": true
+            },
+            "event_name": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "event_date": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "type": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "notes": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "location": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "status": {
+              "type": "TEXT",
+              "pk": false
+            }
+          },
+          "foreign_keys": []
+        },
+        "expense": {
+          "columns": {
+            "expense_id": {
+              "type": "TEXT",
+              "pk": true
+            },
+            "expense_description": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "expense_date": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "cost": {
+              "type": "REAL",
+              "pk": false
+            },
+            "approved": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "link_to_member": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "link_to_budget": {
+              "type": "TEXT",
+              "pk": false
+            }
+          },
+          "foreign_keys": [
+            {
+              "column": "link_to_member",
+              "table": "member",
+              "target": "member_id"
+            },
+            {
+              "column": "link_to_budget",
+              "table": "budget",
+              "target": "budget_id"
+            }
+          ]
+        },
+        "income": {
+          "columns": {
+            "income_id": {
+              "type": "TEXT",
+              "pk": true
+            },
+            "date_received": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "amount": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "source": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "notes": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "link_to_member": {
+              "type": "TEXT",
+              "pk": false
+            }
+          },
+          "foreign_keys": [
+            {
+              "column": "link_to_member",
+              "table": "member",
+              "target": "member_id"
+            }
+          ]
+        },
+        "major": {
+          "columns": {
+            "major_id": {
+              "type": "TEXT",
+              "pk": true
+            },
+            "major_name": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "department": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "college": {
+              "type": "TEXT",
+              "pk": false
+            }
+          },
+          "foreign_keys": []
+        },
+        "member": {
+          "columns": {
+            "member_id": {
+              "type": "TEXT",
+              "pk": true
+            },
+            "first_name": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "last_name": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "email": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "position": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "t_shirt_size": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "phone": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "zip": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "link_to_major": {
+              "type": "TEXT",
+              "pk": false
+            }
+          },
+          "foreign_keys": [
+            {
+              "column": "zip",
+              "table": "zip_code",
+              "target": "zip_code"
+            },
+            {
+              "column": "link_to_major",
+              "table": "major",
+              "target": "major_id"
+            }
+          ]
+        },
+        "zip_code": {
+          "columns": {
+            "zip_code": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "type": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "city": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "county": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "state": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "short_state": {
+              "type": "TEXT",
+              "pk": false
+            }
+          },
+          "foreign_keys": []
+        }
+      },
+      "responses": [
+        {
+          "purpose": "output_requirements",
+          "raw": "{\"status\":\"clear\",\"requested\":[{\"id\":\"o1\",\"source\":\"question\",\"quote\":\"How many majors offered by the college that offers Tyler Hewitt's major currently have no enrolled members in the club?\",\"description\":\"Count of majors with no enrolled club members\",\"kind\":\"measure\",\"support\":\"explicit\",\"representation\":\"not_applicable\"}],\"constraints\":[{\"kind\":\"filter\",\"source\":\"question\",\"quote\":\"majors offered by the college that offers Tyler Hewitt's major\",\"description\":\"Restrict majors to those offered by the college offering Tyler Hewitt's major\"},{\"kind\":\"filter\",\"source\":\"question\",\"quote\":\"currently have no enrolled members in the club\",\"description\":\"Only majors with zero enrolled club members\"},{\"kind\":\"aggregation\",\"source\":\"question\",\"quote\":\"Count every major that college offers, by major name\",\"description\":\"Count distinct majors by major name\"}],\"ambiguities\":[]}"
+        },
+        {
+          "purpose": "semantic_review",
+          "raw": "{\"action\":\"accept\",\"requirements\":[{\"id\":\"r1\",\"source\":\"question\",\"quote\":\"majors offered by the college that offers Tyler Hewitt's major\",\"check\":\"filters\",\"status\":\"pass\",\"sql_fragment\":\"m.college = (SELECT m2.college FROM member AS mem JOIN major AS m2 ON mem.link_to_major = m2.major_id WHERE mem.first_name = 'Tyler' AND mem.last_name = 'Hewitt')\",\"reason\":\"Restricts to Tyler Hewitt's college\"},{\"id\":\"r2\",\"source\":\"question\",\"quote\":\"currently have no enrolled members in the club\",\"check\":\"filters\",\"status\":\"pass\",\"sql_fragment\":\"m.major_id NOT IN (SELECT mem.link_to_major FROM member AS mem WHERE mem.link_to_major IS NOT NULL)\",\"reason\":\"Excludes majors with enrolled members; NULL RHS probed clean\"},{\"id\":\"r3\",\"source\":\"question\",\"quote\":\"Count every major that college offers, by major name\",\"check\":\"aggregation\",\"status\":\"pass\",\"sql_fragment\":\"COUNT(*)\",\"reason\":\"Counts majors; major_id unique so count equals distinct names\"},{\"id\":\"r4\",\"source\":\"question\",\"quote\":\"How many majors\",\"check\":\"output\",\"status\":\"pass\",\"sql_fragment\":\"COUNT(*)\",\"reason\":\"Single count output matches o1\"}],\"checks\":{\"output\":{\"status\":\"pass\",\"reason\":\"COUNT(*) maps to o1, no extras\"},\"filters\":{\"status\":\"pass\",\"reason\":\"College and zero-member filters present\"},\"joins\":{\"status\":\"pass\",\"reason\":\"Subquery joins member to major correctly\"},\"aggregation\":{\"status\":\"pass\",\"reason\":\"Counts majors\"},\"ordering\":{\"status\":\"pass\",\"reason\":\"not required\"},\"limit\":{\"status\":\"pass\",\"reason\":\"not required\"}},\"changes\":[],\"output_contract\":{\"columns\":[{\"position\":1,\"expression\":\"COUNT(*)\",\"disposition\":\"required\",\"requested\":[\"o1\"],\"reason\":\"Count of qualifying majors\",\"basis\":{\"source\":\"question\",\"quote\":\"How many majors offered by the college that offers Tyler Hewitt's major currently have no enrolled members in the club?\"}}]},\"projection_only\":false}"
+        }
+      ],
+      "provenance": {
+        "path": "output\\issue123-live-ui-20261110\\semantic-pilot-deepseek-v7-core6-q308-20261111\\trace.jsonl",
+        "sha256": "ffb38199a9d925407c496424e359b681d6e33a9d43d07c5aa03fec82f8786c3d"
+      }
+    },
+    {
+      "question": {
+        "question_id": "333",
+        "db_id": "superhero",
+        "question": "List the superheroes from Marvel Comics who have the super power of 'Super Strength'.",
+        "evidence": ""
+      },
+      "before": "SELECT s.superhero_name\nFROM superhero AS s\nJOIN publisher AS p ON p.id = s.publisher_id\nJOIN hero_power AS hp ON hp.hero_id = s.id\nJOIN superpower AS sp ON sp.id = hp.power_id\nWHERE p.publisher_name = 'Marvel Comics'\n  AND sp.power_name = 'Super Strength'",
+      "schema": {
+        "alignment": {
+          "columns": {
+            "id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "alignment": {
+              "type": "TEXT",
+              "pk": false
+            }
+          },
+          "foreign_keys": []
+        },
+        "attribute": {
+          "columns": {
+            "id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "attribute_name": {
+              "type": "TEXT",
+              "pk": false
+            }
+          },
+          "foreign_keys": []
+        },
+        "colour": {
+          "columns": {
+            "id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "colour": {
+              "type": "TEXT",
+              "pk": false
+            }
+          },
+          "foreign_keys": []
+        },
+        "gender": {
+          "columns": {
+            "id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "gender": {
+              "type": "TEXT",
+              "pk": false
+            }
+          },
+          "foreign_keys": []
+        },
+        "hero_attribute": {
+          "columns": {
+            "hero_id": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "attribute_id": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "attribute_value": {
+              "type": "INTEGER",
+              "pk": false
+            }
+          },
+          "foreign_keys": [
+            {
+              "column": "hero_id",
+              "table": "superhero",
+              "target": "id"
+            },
+            {
+              "column": "attribute_id",
+              "table": "attribute",
+              "target": "id"
+            }
+          ]
+        },
+        "hero_power": {
+          "columns": {
+            "hero_id": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "power_id": {
+              "type": "INTEGER",
+              "pk": false
+            }
+          },
+          "foreign_keys": [
+            {
+              "column": "power_id",
+              "table": "superpower",
+              "target": "id"
+            },
+            {
+              "column": "hero_id",
+              "table": "superhero",
+              "target": "id"
+            }
+          ]
+        },
+        "publisher": {
+          "columns": {
+            "id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "publisher_name": {
+              "type": "TEXT",
+              "pk": false
+            }
+          },
+          "foreign_keys": []
+        },
+        "race": {
+          "columns": {
+            "id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "race": {
+              "type": "TEXT",
+              "pk": false
+            }
+          },
+          "foreign_keys": []
+        },
+        "superhero": {
+          "columns": {
+            "id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "superhero_name": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "full_name": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "gender_id": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "eye_colour_id": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "hair_colour_id": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "skin_colour_id": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "race_id": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "publisher_id": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "alignment_id": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "height_cm": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "weight_kg": {
+              "type": "INTEGER",
+              "pk": false
+            }
+          },
+          "foreign_keys": [
+            {
+              "column": "skin_colour_id",
+              "table": "colour",
+              "target": "id"
+            },
+            {
+              "column": "race_id",
+              "table": "race",
+              "target": "id"
+            },
+            {
+              "column": "publisher_id",
+              "table": "publisher",
+              "target": "id"
+            },
+            {
+              "column": "hair_colour_id",
+              "table": "colour",
+              "target": "id"
+            },
+            {
+              "column": "gender_id",
+              "table": "gender",
+              "target": "id"
+            },
+            {
+              "column": "eye_colour_id",
+              "table": "colour",
+              "target": "id"
+            },
+            {
+              "column": "alignment_id",
+              "table": "alignment",
+              "target": "id"
+            }
+          ]
+        },
+        "superpower": {
+          "columns": {
+            "id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "power_name": {
+              "type": "TEXT",
+              "pk": false
+            }
+          },
+          "foreign_keys": []
+        }
+      },
+      "responses": [
+        {
+          "purpose": "output_requirements",
+          "raw": "{\"status\":\"ambiguous\",\"requested\":[{\"id\":\"o1\",\"source\":\"question\",\"quote\":\"List the superheroes from Marvel Comics who have the super power of 'Super Strength'\",\"description\":\"superheroes matching the publisher and power filters\",\"kind\":\"entity\",\"support\":\"explicit\",\"representation\":\"unspecified\"}],\"constraints\":[{\"kind\":\"filter\",\"source\":\"question\",\"quote\":\"from Marvel Comics\",\"description\":\"publisher must be Marvel Comics\"},{\"kind\":\"filter\",\"source\":\"question\",\"quote\":\"who have the super power of 'Super Strength'\",\"description\":\"superhero must have the Super Strength power\"}],\"ambiguities\":[\"The requested representation of the superhero entities (e.g., names only, IDs, or full records) is unspecified.\"]}"
+        }
+      ],
+      "provenance": {
+        "path": "output\\issue123-live-ui-20261110\\semantic-pilot-deepseek-v7-core6-q333-20261111\\trace.jsonl",
+        "sha256": "141f3d670a268d387d71546b1dff368b5f74bde35f181caf7277eb0a4e5871ac"
+      }
+    },
+    {
+      "question": {
+        "question_id": "203",
+        "db_id": "financial",
+        "question": "We're reviewing our first month of operations. Looking at the districts where we opened at least one account during that first month, which district had the largest population, and how many inhabitants does it have? If several districts tie for the largest population, list all of them with their populations.",
+        "evidence": "The bank's first month of operation is the calendar month in which its earliest account was opened."
+      },
+      "before": "SELECT d.A2, CAST(d.A4 AS INTEGER) AS A4\nFROM district AS d\nWHERE d.district_id IN (\n    SELECT a.district_id\n    FROM account AS a\n    WHERE a.date >= (SELECT MIN(date) FROM account)\n      AND a.date < date((SELECT MIN(date) FROM account), 'start of month', '+1 month')\n)\nAND CAST(d.A4 AS INTEGER) = (\n    SELECT MAX(CAST(d2.A4 AS INTEGER))\n    FROM district AS d2\n    WHERE d2.district_id IN (\n        SELECT a.district_id\n        FROM account AS a\n        WHERE a.date >= (SELECT MIN(date) FROM account)\n          AND a.date < date((SELECT MIN(date) FROM account), 'start of month', '+1 month')\n    )\n)",
+      "schema": {
+        "account": {
+          "columns": {
+            "account_id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "district_id": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "frequency": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "date": {
+              "type": "DATE",
+              "pk": false
+            }
+          },
+          "foreign_keys": [
+            {
+              "column": "district_id",
+              "table": "district",
+              "target": "district_id"
+            }
+          ]
+        },
+        "card": {
+          "columns": {
+            "card_id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "disp_id": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "type": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "issued": {
+              "type": "DATE",
+              "pk": false
+            }
+          },
+          "foreign_keys": [
+            {
+              "column": "disp_id",
+              "table": "disp",
+              "target": "disp_id"
+            }
+          ]
+        },
+        "client": {
+          "columns": {
+            "client_id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "gender": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "birth_date": {
+              "type": "DATE",
+              "pk": false
+            },
+            "district_id": {
+              "type": "INTEGER",
+              "pk": false
+            }
+          },
+          "foreign_keys": [
+            {
+              "column": "district_id",
+              "table": "district",
+              "target": "district_id"
+            }
+          ]
+        },
+        "disp": {
+          "columns": {
+            "disp_id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "client_id": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "account_id": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "type": {
+              "type": "TEXT",
+              "pk": false
+            }
+          },
+          "foreign_keys": [
+            {
+              "column": "client_id",
+              "table": "client",
+              "target": "client_id"
+            },
+            {
+              "column": "account_id",
+              "table": "account",
+              "target": "account_id"
+            }
+          ]
+        },
+        "district": {
+          "columns": {
+            "district_id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "A2": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "A3": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "A4": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "A5": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "A6": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "A7": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "A8": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "A9": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "A10": {
+              "type": "REAL",
+              "pk": false
+            },
+            "A11": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "A12": {
+              "type": "REAL",
+              "pk": false
+            },
+            "A13": {
+              "type": "REAL",
+              "pk": false
+            },
+            "A14": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "A15": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "A16": {
+              "type": "INTEGER",
+              "pk": false
+            }
+          },
+          "foreign_keys": []
+        },
+        "loan": {
+          "columns": {
+            "loan_id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "account_id": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "date": {
+              "type": "DATE",
+              "pk": false
+            },
+            "amount": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "duration": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "payments": {
+              "type": "REAL",
+              "pk": false
+            },
+            "status": {
+              "type": "TEXT",
+              "pk": false
+            }
+          },
+          "foreign_keys": [
+            {
+              "column": "account_id",
+              "table": "account",
+              "target": "account_id"
+            }
+          ]
+        },
+        "order": {
+          "columns": {
+            "order_id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "account_id": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "bank_to": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "account_to": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "amount": {
+              "type": "REAL",
+              "pk": false
+            },
+            "k_symbol": {
+              "type": "TEXT",
+              "pk": false
+            }
+          },
+          "foreign_keys": [
+            {
+              "column": "account_id",
+              "table": "account",
+              "target": "account_id"
+            }
+          ]
+        },
+        "trans": {
+          "columns": {
+            "trans_id": {
+              "type": "INTEGER",
+              "pk": true
+            },
+            "account_id": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "date": {
+              "type": "DATE",
+              "pk": false
+            },
+            "type": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "operation": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "amount": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "balance": {
+              "type": "INTEGER",
+              "pk": false
+            },
+            "k_symbol": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "bank": {
+              "type": "TEXT",
+              "pk": false
+            },
+            "account": {
+              "type": "INTEGER",
+              "pk": false
+            }
+          },
+          "foreign_keys": [
+            {
+              "column": "account_id",
+              "table": "account",
+              "target": "account_id"
+            }
+          ]
+        }
+      },
+      "responses": [
+        {
+          "purpose": "output_requirements",
+          "raw": "{\"status\":\"clear\",\"requested\":[{\"id\":\"o1\",\"source\":\"question\",\"quote\":\"which district had the largest population\",\"description\":\"District with the largest population among qualifying districts\",\"kind\":\"entity\",\"support\":\"explicit\",\"representation\":\"unspecified\"},{\"id\":\"o2\",\"source\":\"question\",\"quote\":\"how many inhabitants does it have\",\"description\":\"Population (inhabitants) of the district\",\"kind\":\"measure\",\"support\":\"explicit\",\"representation\":\"not_applicable\"}],\"constraints\":[{\"kind\":\"filter\",\"source\":\"question\",\"quote\":\"districts where we opened at least one account during that first month\",\"description\":\"Restrict to districts with at least one account opened in the bank's first calendar month\"},{\"kind\":\"filter\",\"source\":\"evidence\",\"quote\":\"calendar month in which its earliest account was opened\",\"description\":\"First month defined by the calendar month of the earliest account opening\"},{\"kind\":\"ordering\",\"source\":\"question\",\"quote\":\"largest population\",\"description\":\"Rank districts by population descending\"},{\"kind\":\"ties\",\"source\":\"question\",\"quote\":\"If several districts tie for the largest population, list all of them\",\"description\":\"Include all districts tied at the maximum population\"}],\"ambiguities\":[\"District representation (name vs ID vs both) is unspecified for the returned entity\"]}"
+        }
+      ],
+      "provenance": {
+        "path": "output\\issue123-live-ui-20261110\\semantic-pilot-deepseek-v7-core6-q203-20261111\\trace.jsonl",
+        "sha256": "c2de55cb67aef47d591dc4ed2f7aa1891f0944817971cefa051f49a3ef370f8f"
+      }
+    }
+  ]
+}

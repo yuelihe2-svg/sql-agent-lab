@@ -1,0 +1,233 @@
+{
+  "question": {
+    "question_id": "165",
+    "db_id": "european_football_2",
+    "question": "List the ten players taller than 180 cm with the highest mean recorded heading accuracy, highest first. Break mean ties by player API ID.",
+    "evidence": ""
+  },
+  "before": "SELECT p.player_name, p.player_api_id, AVG(pa.heading_accuracy) AS mean_heading\nFROM Player AS p\nJOIN Player_Attributes AS pa ON pa.player_api_id = p.player_api_id\nWHERE p.height > 180\nGROUP BY p.player_api_id\nORDER BY mean_heading DESC, p.player_api_id ASC\nLIMIT 10",
+  "raw": "{\"action\":\"accept\",\"requirements\":[{\"id\":\"r1\",\"source\":\"question\",\"quote\":\"List the ten players\",\"check\":\"output\",\"status\":\"pass\",\"sql_fragment\":\"SELECT p.player_name, p.player_api_id\",\"reason\":\"Player name and API ID returned\"},{\"id\":\"r2\",\"source\":\"question\",\"quote\":\"taller than 180 cm\",\"check\":\"filters\",\"status\":\"pass\",\"sql_fragment\":\"WHERE p.height > 180\",\"reason\":\"Strict height filter applied\"},{\"id\":\"r3\",\"source\":\"question\",\"quote\":\"highest mean recorded heading accuracy\",\"check\":\"aggregation\",\"status\":\"pass\",\"sql_fragment\":\"AVG(pa.heading_accuracy)\",\"reason\":\"Mean heading accuracy per player\"},{\"id\":\"r4\",\"source\":\"question\",\"quote\":\"highest first\",\"check\":\"ordering\",\"status\":\"pass\",\"sql_fragment\":\"ORDER BY mean_heading DESC\",\"reason\":\"Descending mean\"},{\"id\":\"r5\",\"source\":\"question\",\"quote\":\"Break mean ties by player API ID\",\"check\":\"ordering\",\"status\":\"pass\",\"sql_fragment\":\"p.player_api_id ASC\",\"reason\":\"Tie-break ascending API ID\"},{\"id\":\"r6\",\"source\":\"question\",\"quote\":\"ten players\",\"check\":\"limit\",\"status\":\"pass\",\"sql_fragment\":\"LIMIT 10\",\"reason\":\"Limit 10\"},{\"id\":\"r7\",\"source\":\"evidence\",\"quote\":\"FK: player_api_id -> Player.player_api_id\",\"check\":\"joins\",\"status\":\"pass\",\"sql_fragment\":\"JOIN Player_Attributes AS pa ON pa.player_api_id = p.player_api_id\",\"reason\":\"Correct join key\"}],\"checks\":{\"output\":{\"status\":\"pass\",\"reason\":\"All requested outputs present, no extras\"},\"filters\":{\"status\":\"pass\",\"reason\":\"height > 180\"},\"joins\":{\"status\":\"pass\",\"reason\":\"Correct FK join\"},\"aggregation\":{\"status\":\"pass\",\"reason\":\"AVG per player\"},\"ordering\":{\"status\":\"pass\",\"reason\":\"Mean DESC, API ID ASC\"},\"limit\":{\"status\":\"pass\",\"reason\":\"LIMIT 10\"}},\"changes\":[],\"output_contract\":{\"requested\":[{\"id\":\"o1\",\"source\":\"question\",\"quote\":\"List the ten players\",\"description\":\"Player identity (name and API ID)\"},{\"id\":\"o2\",\"source\":\"question\",\"quote\":\"highest mean recorded heading accuracy\",\"description\":\"Mean heading accuracy value\"}],\"columns\":[{\"position\":1,\"expression\":\"p.player_name\",\"disposition\":\"required\",\"requested\":[\"o1\"],\"reason\":\"Player name\",\"basis\":{\"source\":\"question\",\"quote\":\"List the ten players\"}},{\"position\":2,\"expression\":\"p.player_api_id\",\"disposition\":\"required\",\"requested\":[\"o1\"],\"reason\":\"Player API ID\",\"basis\":{\"source\":\"question\",\"quote\":\"Break mean ties by player API ID\"}},{\"position\":3,\"expression\":\"AVG(pa.heading_accuracy) AS mean_heading\",\"disposition\":\"required\",\"requested\":[\"o2\"],\"reason\":\"Mean heading accuracy\",\"basis\":{\"source\":\"question\",\"quote\":\"highest mean recorded heading accuracy\"}}]},\"projection_only\":false}",
+  "schema": {
+    "Player": {
+      "columns": {
+        "id": {
+          "type": "INTEGER",
+          "pk": true
+        },
+        "player_api_id": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "player_name": {
+          "type": "TEXT",
+          "pk": false
+        },
+        "player_fifa_api_id": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "birthday": {
+          "type": "TEXT",
+          "pk": false
+        },
+        "height": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "weight": {
+          "type": "INTEGER",
+          "pk": false
+        }
+      },
+      "foreign_keys": []
+    },
+    "Player_Attributes": {
+      "columns": {
+        "id": {
+          "type": "INTEGER",
+          "pk": true
+        },
+        "player_fifa_api_id": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "player_api_id": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "date": {
+          "type": "TEXT",
+          "pk": false
+        },
+        "overall_rating": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "potential": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "preferred_foot": {
+          "type": "TEXT",
+          "pk": false
+        },
+        "attacking_work_rate": {
+          "type": "TEXT",
+          "pk": false
+        },
+        "defensive_work_rate": {
+          "type": "TEXT",
+          "pk": false
+        },
+        "crossing": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "finishing": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "heading_accuracy": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "short_passing": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "volleys": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "dribbling": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "curve": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "free_kick_accuracy": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "long_passing": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "ball_control": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "acceleration": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "sprint_speed": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "agility": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "reactions": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "balance": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "shot_power": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "jumping": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "stamina": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "strength": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "long_shots": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "aggression": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "interceptions": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "positioning": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "vision": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "penalties": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "marking": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "standing_tackle": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "sliding_tackle": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "gk_diving": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "gk_handling": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "gk_kicking": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "gk_positioning": {
+          "type": "INTEGER",
+          "pk": false
+        },
+        "gk_reflexes": {
+          "type": "INTEGER",
+          "pk": false
+        }
+      },
+      "foreign_keys": [
+        {
+          "column": "player_api_id",
+          "table": "Player",
+          "target": "player_api_id"
+        },
+        {
+          "column": "player_fifa_api_id",
+          "table": "Player",
+          "target": "player_fifa_api_id"
+        }
+      ]
+    }
+  },
+  "provenance": {
+    "trace": "D:\\Study\\project\\agentopt-research\\output\\issue123-live-ui-20261110\\semantic-pilot-deepseek-v5-q165-20261110\\trace.jsonl",
+    "sha256": "e6b5b2cc0e04bcb79d544405750ea41c71b04d4837e7f6ef32eb5480bbce4583"
+  }
+}

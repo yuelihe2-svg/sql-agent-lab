@@ -1,0 +1,369 @@
+[
+  {
+    "question_id": "165",
+    "result": {
+      "score": 0.0,
+      "semantic_status": "output_unverified",
+      "semantic_metrics": {
+        "outcome": "output_columns_ambiguous",
+        "sql_changed": false,
+        "revision_proposed": false,
+        "format_normalized": false,
+        "elapsed_seconds": 3.912533499998972,
+        "total_review_seconds": 7.045421100003296
+      },
+      "added_review_seconds": 7.045443800001522,
+      "elapsed_seconds": 9.704755099999602
+    },
+    "events": [
+      {
+        "event": "output_requirements_frozen",
+        "run_id": "semantic-pilot-deepseek-v8-core6-q165-20261111",
+        "question_id": "165",
+        "models": {
+          "selector": "deepseek-flash",
+          "decomposer": "deepseek-flash",
+          "refiner": "deepseek-flash"
+        },
+        "report": {
+          "ambiguities": [],
+          "constraints": [
+            {
+              "description": "include only players with height greater than 180 cm",
+              "kind": "filter",
+              "quote": "taller than 180 cm",
+              "source": "question"
+            },
+            {
+              "description": "sort by mean heading accuracy descending",
+              "kind": "ordering",
+              "quote": "highest mean recorded heading accuracy, highest first",
+              "source": "question"
+            },
+            {
+              "description": "tie-break equal mean accuracy by player API ID; ID is ordering only, not a requested output",
+              "kind": "ties",
+              "quote": "Break mean ties by player API ID",
+              "source": "question"
+            },
+            {
+              "description": "return at most ten players",
+              "kind": "limit",
+              "quote": "the ten players",
+              "source": "question"
+            },
+            {
+              "description": "aggregate heading accuracy per player as a mean",
+              "kind": "aggregation",
+              "quote": "mean recorded heading accuracy",
+              "source": "question"
+            }
+          ],
+          "requested": [
+            {
+              "description": "players meeting height and ranking criteria",
+              "id": "o1",
+              "kind": "entity",
+              "quote": "List the ten players taller than 180 cm with the highest mean recorded heading accuracy",
+              "representation": "unspecified",
+              "source": "question",
+              "support": "explicit"
+            },
+            {
+              "description": "mean recorded heading accuracy per player",
+              "id": "o2",
+              "kind": "measure",
+              "quote": "highest mean recorded heading accuracy",
+              "representation": "not_applicable",
+              "source": "question",
+              "support": "explicit"
+            }
+          ],
+          "status": "clear"
+        },
+        "digest": "c39d2121f1ce96f856cf54add8e7820976f9f89393bb67835ab54226fd10bfa2",
+        "protocol_warnings": [],
+        "assessment": {
+          "status": "needs_review",
+          "risks": [
+            {
+              "code": "entity_representation_unresolved",
+              "output": "o1"
+            }
+          ],
+          "sql_review_allowed": true,
+          "column_removal_blocked": true,
+          "semantic_correctness": "not_verified",
+          "automatic_column_removal": false
+        },
+        "question_hash": "a1bc27492491f9a7d5c46adecb7e071a417ff3b2a792bdeae000d9ee411dfdcc",
+        "candidate_sql_visible": false,
+        "elapsed_seconds": 3.128917199996067,
+        "elapsed": 4.605996900005266
+      },
+      {
+        "event": "semantic_requirements_checked",
+        "run_id": "semantic-pilot-deepseek-v8-core6-q165-20261111",
+        "question_id": "165",
+        "models": {
+          "selector": "deepseek-flash",
+          "decomposer": "deepseek-flash",
+          "refiner": "deepseek-flash"
+        },
+        "report": {
+          "status": "validated",
+          "count": 7,
+          "citations": [
+            {
+              "requirement": "r1",
+              "sources": [
+                "question"
+              ],
+              "kind": "user_requirement"
+            },
+            {
+              "requirement": "r2",
+              "sources": [
+                "question"
+              ],
+              "kind": "user_requirement"
+            },
+            {
+              "requirement": "r3",
+              "sources": [
+                "question"
+              ],
+              "kind": "user_requirement"
+            },
+            {
+              "requirement": "r4",
+              "sources": [
+                "question"
+              ],
+              "kind": "user_requirement"
+            },
+            {
+              "requirement": "r5",
+              "sources": [
+                "question"
+              ],
+              "kind": "user_requirement"
+            },
+            {
+              "requirement": "r6",
+              "sources": [
+                "question"
+              ],
+              "kind": "user_requirement"
+            },
+            {
+              "requirement": "r7",
+              "sources": [
+                "question"
+              ],
+              "kind": "user_requirement"
+            }
+          ],
+          "warnings": [],
+          "semantic_completeness": "not_verified",
+          "scope": "Report structure and cited evidence only; no word-coverage or semantic correctness claim"
+        },
+        "requirements": [
+          {
+            "id": "r1",
+            "source": "question",
+            "quote": "List the ten players taller than 180 cm with the highest mean recorded heading accuracy",
+            "check": "output",
+            "status": "uncertain",
+            "sql_fragment": "p.player_name, p.player_api_id, AVG(pa.heading_accuracy) AS mean_heading",
+            "reason": "entity representation unspecified; name+id+mean all present"
+          },
+          {
+            "id": "r2",
+            "source": "question",
+            "quote": "taller than 180 cm",
+            "check": "filters",
+            "status": "pass",
+            "sql_fragment": "WHERE p.height > 180",
+            "reason": "strict greater-than filter"
+          },
+          {
+            "id": "r3",
+            "source": "question",
+            "quote": "mean recorded heading accuracy",
+            "check": "aggregation",
+            "status": "pass",
+            "sql_fragment": "AVG(pa.heading_accuracy)",
+            "reason": "mean per player via GROUP BY player_api_id"
+          },
+          {
+            "id": "r4",
+            "source": "question",
+            "quote": "highest mean recorded heading accuracy, highest first",
+            "check": "ordering",
+            "status": "pass",
+            "sql_fragment": "ORDER BY mean_heading DESC",
+            "reason": "descending mean"
+          },
+          {
+            "id": "r5",
+            "source": "question",
+            "quote": "Break mean ties by player API ID",
+            "check": "ordering",
+            "status": "pass",
+            "sql_fragment": "p.player_api_id ASC",
+            "reason": "tie-break ascending id"
+          },
+          {
+            "id": "r6",
+            "source": "question",
+            "quote": "the ten players",
+            "check": "limit",
+            "status": "pass",
+            "sql_fragment": "LIMIT 10",
+            "reason": "ten rows"
+          },
+          {
+            "id": "r7",
+            "source": "question",
+            "quote": "mean recorded heading accuracy",
+            "check": "joins",
+            "status": "pass",
+            "sql_fragment": "JOIN Player_Attributes AS pa ON pa.player_api_id = p.player_api_id",
+            "reason": "attributes joined per player"
+          }
+        ],
+        "elapsed": 8.520331899999292
+      },
+      {
+        "event": "semantic_review_finished",
+        "run_id": "semantic-pilot-deepseek-v8-core6-q165-20261111",
+        "question_id": "165",
+        "models": {
+          "selector": "deepseek-flash",
+          "decomposer": "deepseek-flash",
+          "refiner": "deepseek-flash"
+        },
+        "outcome": "output_columns_ambiguous",
+        "sql_changed": false,
+        "revision_proposed": false,
+        "format_normalized": false,
+        "elapsed_seconds": 3.912533499998972,
+        "semantic_status": "output_unverified",
+        "elapsed": 8.521480399998836
+      }
+    ],
+    "source_sha256": "859852dbfc03b1d3478cbac8befeafe95942ece2c97abe08526d6e580f380b7e"
+  },
+  {
+    "question_id": "333",
+    "result": {
+      "score": 1.0,
+      "semantic_status": "unverified",
+      "semantic_metrics": {
+        "outcome": "missing_sql_anchor",
+        "sql_changed": false,
+        "revision_proposed": false,
+        "format_normalized": false,
+        "elapsed_seconds": 2.972946399997454,
+        "total_review_seconds": 5.503928200007067
+      },
+      "added_review_seconds": 5.503947599994717,
+      "elapsed_seconds": 6.116335400001844
+    },
+    "events": [
+      {
+        "event": "output_requirements_frozen",
+        "run_id": "semantic-pilot-deepseek-v8-core6-q333-20261111",
+        "question_id": "333",
+        "models": {
+          "selector": "deepseek-flash",
+          "decomposer": "deepseek-flash",
+          "refiner": "deepseek-flash"
+        },
+        "report": {
+          "ambiguities": [],
+          "constraints": [
+            {
+              "description": "Publisher must be Marvel Comics",
+              "kind": "filter",
+              "quote": "from Marvel Comics",
+              "source": "question"
+            },
+            {
+              "description": "Superhero must have the Super Strength power",
+              "kind": "filter",
+              "quote": "who have the super power of 'Super Strength'",
+              "source": "question"
+            }
+          ],
+          "requested": [
+            {
+              "description": "Superheroes matching the publisher and power criteria",
+              "id": "o1",
+              "kind": "entity",
+              "quote": "List the superheroes from Marvel Comics who have the super power of 'Super Strength'",
+              "representation": "unspecified",
+              "source": "question",
+              "support": "explicit"
+            }
+          ],
+          "status": "clear"
+        },
+        "digest": "8701f9ae8d82f7ef8b7f66727a347fbf0762449dba515c647c1f5723bfc4b3a2",
+        "protocol_warnings": [],
+        "assessment": {
+          "status": "needs_review",
+          "risks": [
+            {
+              "code": "entity_representation_unresolved",
+              "output": "o1"
+            }
+          ],
+          "sql_review_allowed": true,
+          "column_removal_blocked": true,
+          "semantic_correctness": "not_verified",
+          "automatic_column_removal": false
+        },
+        "question_hash": "32a3ecb0d24647bc7488d4a55a64f157b7000760923f53ced753b22d0ee55edd",
+        "candidate_sql_visible": false,
+        "elapsed_seconds": 2.528875500007416,
+        "elapsed": 2.6700806000008015
+      },
+      {
+        "event": "semantic_review_error",
+        "run_id": "semantic-pilot-deepseek-v8-core6-q333-20261111",
+        "question_id": "333",
+        "models": {
+          "selector": "deepseek-flash",
+          "decomposer": "deepseek-flash",
+          "refiner": "deepseek-flash"
+        },
+        "code": "missing_sql_anchor",
+        "error_type": "ReviewProtocolError",
+        "error": "A passed requirement needs a concrete SQL fragment: r5",
+        "sql_preserved": true,
+        "failure_kind": "report_validation",
+        "elapsed": 5.643890799998189
+      },
+      {
+        "event": "semantic_review_finished",
+        "run_id": "semantic-pilot-deepseek-v8-core6-q333-20261111",
+        "question_id": "333",
+        "models": {
+          "selector": "deepseek-flash",
+          "decomposer": "deepseek-flash",
+          "refiner": "deepseek-flash"
+        },
+        "outcome": "missing_sql_anchor",
+        "sql_changed": false,
+        "revision_proposed": false,
+        "format_normalized": false,
+        "elapsed_seconds": 2.972946399997454,
+        "semantic_status": "unverified",
+        "elapsed": 5.644476999994367
+      }
+    ],
+    "source_sha256": "416d20d88c148640861f88edafc0bff31796b2766d2ded6009ef26f773f33279"
+  }
+]

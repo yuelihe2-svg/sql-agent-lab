@@ -1,0 +1,8 @@
+{
+  "data_dir": "D:/sql-agent-data/bird",
+  "metadata": "D:/sql-agent-data/metadata/column-metadata.json",
+  "output_dir": "D:/sql-agent-runs/web",
+  "analysis_dir": null,
+  "history": null,
+  "recorded_batches": []
+}

@@ -1,0 +1,122 @@
+[
+  {
+    "question": {
+      "question_id": "2",
+      "db_id": "california_schools",
+      "question": "For the five schools with ownership code 66 and the largest K-12 free-or-reduced-price meal counts, give each school's K-12 eligible meal rate rounded to six decimal places.",
+      "evidence": ""
+    },
+    "before": "SELECT ROUND(fr.\"Percent (%) Eligible FRPM (K-12)\", 6) AS rounded_eligible_rate\nFROM frpm fr\nWHERE fr.CDSCode IN (\n    SELECT fr.CDSCode \n    FROM frpm fr \n    JOIN schools sch ON fr.CDSCode = sch.CDSCode \n    WHERE sch.SOC = '66' \n    ORDER BY fr.\"FRPM Count (K-12)\" DESC \n    LIMIT 5\n)",
+    "report": {
+      "action": "revise",
+      "checks": {
+        "output": {
+          "status": "fail",
+          "reason": "Question asks for K-12 eligible meal rate, not FRPM eligibility. FRPM is distinct from free meal eligibility. SQL returns wrong metric."
+        },
+        "filters": {
+          "status": "pass",
+          "reason": "Filter for ownership code 66 and ordering by FRPM count is correctly applied in subquery."
+        },
+        "joins": {
+          "status": "pass",
+          "reason": "Join between frpm and schools on CDSCode is valid and matches schema."
+        },
+        "aggregation": {
+          "status": "fail",
+          "reason": "Question requests meal rate, not FRPM eligibility. Aggregation uses incorrect column; should use Percent (%) Eligible Free (K-12)."
+        },
+        "ordering": {
+          "status": "pass",
+          "reason": "Ordering by FRPM count is correct, though metric is misaligned with question."
+        },
+        "limit": {
+          "status": "pass",
+          "reason": "Limit 5 is correct for top five schools."
+        }
+      },
+      "sql": "SELECT ROUND(fr.\"Percent (%) Eligible Free (K-12)\", 6) AS rounded_eligible_rate FROM frpm fr WHERE fr.CDSCode IN (SELECT fr.CDSCode FROM frpm fr JOIN schools sch ON fr.CDSCode = sch.CDSCode WHERE sch.SOC = '66' ORDER BY fr.\"FRPM Count (K-12)\") DESC LIMIT 5"
+    },
+    "source": "output\\issue123-live-ui-20261110\\semantic-pilot-20261110-q2\\trace.jsonl"
+  },
+  {
+    "question": {
+      "question_id": "23",
+      "db_id": "california_schools",
+      "question": "I'm looking at the schools that the State Board of Education directly runs or charters. Which individual school among them had the most students score at least 1500 on the SAT? Please give me that school's name and its administrator's email address. If two schools tie on that count, list both.",
+      "evidence": "Schools run or chartered by the State Board of Education are identified by their district ownership type."
+    },
+    "before": "SELECT s.School, COALESCE(s.AdmEmail1, s.AdmEmail2, s.AdmEmail3) AS administrator_email\nFROM schools AS s\nJOIN satscores AS ss ON s.CDSCode = ss.cds\nWHERE s.DOCType = 'State Special Schools'\nGROUP BY s.CDSCode, s.School, s.AdmEmail1, s.AdmEmail2, s.AdmEmail3\nHAVING SUM(CASE WHEN ss.NumGE1500 >= 1 THEN 1 ELSE 0 END) = (\n    SELECT MAX(student_count)\n    FROM (\n        SELECT SUM(CASE WHEN ss.NumGE1500 >= 1 THEN 1 ELSE 0 END) AS student_count\n        FROM schools AS s\n        JOIN satscores AS ss ON s.CDSCode = ss.cds\n        WHERE s.DOCType = 'State Special Schools'\n        GROUP BY s.CDSCode\n    ) AS counts\n)",
+    "report": {
+      "action": "revise",
+      "checks": {
+        "output": {
+          "status": "pass",
+          "reason": "Question asks for school name and administrator email; output includes both."
+        },
+        "filters": {
+          "status": "fail",
+          "reason": "Question specifies schools run or chartered by State Board; filter uses DOCType='State Special Schools', but State Board ownership is not defined by this value; schema shows 'County Office of Education (COE)' as a type, not 'State Special Schools'."
+        },
+        "joins": {
+          "status": "pass",
+          "reason": "Join on CDSCode matches both tables' keys; valid dimension alignment."
+        },
+        "aggregation": {
+          "status": "pass",
+          "reason": "Aggregation counts students with SAT >=1500 per school; correct for tie handling via HAVING."
+        },
+        "ordering": {
+          "status": "uncertain",
+          "reason": "Question does not specify ordering; HAVING does not order; no ORDER BY; ties should be listed but no order is specified in question."
+        },
+        "limit": {
+          "status": "pass",
+          "reason": "Question asks for the school(s) with most students scoring 1500; no row limit needed; HAVING ensures all tied schools are included."
+        }
+      },
+      "sql": "SELECT s.School, COALESCE(s.AdmEmail1, s.AdmEmail2, s.AdmEmail3) AS administrator_email FROM schools AS s JOIN satscores AS ss ON s.CDSCode = ss.cds WHERE s.DOCType = 'County Office of Education (COE)' GROUP BY s.CDSCode, s.School, s.AdmEmail1, s.AdmEmail2, s.AdmEmail3 HAVING SUM(CASE WHEN ss.NumGE1500 >= 1 THEN 1 ELSE 0 END) = (SELECT MAX(student_count) FROM (SELECT SUM(CASE WHEN ss.NumGE1500 >= 1 THEN 1 ELSE 0 END) AS student_count FROM schools AS s JOIN satscores AS ss ON s.CDSCode = ss.cds WHERE s.DOCType = 'County Office of Education (COE)' GROUP BY s.CDSCode) AS counts)"
+    },
+    "source": "output\\issue123-live-ui-20261110\\semantic-pilot-20261110-q23\\trace.jsonl"
+  },
+  {
+    "question": {
+      "question_id": "50",
+      "db_id": "card_games",
+      "question": "Which distinct combinations of card name, artist, and promotional-printing flag occur among the printings tied for the most rulings?",
+      "evidence": ""
+    },
+    "before": "SELECT DISTINCT \n    c.name AS card_name, \n    c.artist AS artist, \n    c.isPromo AS is_promo\nFROM cards AS c\nJOIN rulings AS r ON r.uuid = c.uuid\nWHERE c.printings IN (\n    SELECT c2.printings \n    FROM cards AS c2\n    JOIN rulings AS r2 ON r2.uuid = c2.uuid\n    GROUP BY c2.printings\n    ORDER BY COUNT(r2.id) DESC\n    LIMIT 1\n)",
+    "report": {
+      "action": "revise",
+      "checks": {
+        "output": {
+          "status": "pass",
+          "reason": "Output columns match question: card name, artist, promotional-printing flag."
+        },
+        "filters": {
+          "status": "fail",
+          "reason": "Filter on printings IN (subquery) incorrectly selects only one printing group, not rulings tied for most rulings. Question asks for printings tied for most rulings, not most rulings per printing."
+        },
+        "joins": {
+          "status": "pass",
+          "reason": "Join on uuid between cards and rulings is valid and matches schema."
+        },
+        "aggregation": {
+          "status": "uncertain",
+          "reason": "No aggregation in query, but question involves rulings; aggregation not needed if grouping is by printings per ruling count, but logic is flawed."
+        },
+        "ordering": {
+          "status": "uncertain",
+          "reason": "Ordering is in subquery but not applied to final result; question does not specify ordering, so direction is irrelevant."
+        },
+        "limit": {
+          "status": "fail",
+          "reason": "LIMIT 1 in subquery restricts to one printing, but question asks for combinations tied for most rulings, implying multiple printings may share the ruling count."
+        }
+      },
+      "sql": "SELECT DISTINCT c.name AS card_name, c.artist AS artist, c.isPromo AS is_promo FROM cards AS c JOIN rulings AS r ON r.uuid = c.uuid WHERE c.printings IN (SELECT c2.printings FROM cards AS c2 JOIN rulings AS r2 ON r2.uuid = c2.uuid GROUP BY c2.printings ORDER BY COUNT(r2.id) DESC LIMIT 1)"
+    },
+    "source": "output\\issue123-live-ui-20261110\\semantic-pilot-20261110-q50\\trace.jsonl"
+  }
+]

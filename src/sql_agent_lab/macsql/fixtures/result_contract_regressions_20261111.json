@@ -1,0 +1,2955 @@
+[
+  {
+    "question_id": "222",
+    "source": "output\\issue123-deepseek-repair9-20261111\\q222",
+    "question": {
+      "question_id": "222",
+      "db_id": "financial",
+      "question": "I'm preparing a client review for client 3541. For each account this client can access, I need one row with: the account id, the date the account was opened, its frequency, the name and region of the district where the account is held, whether that district is the client's home district (Yes/No), that district's average salary, the loan repayment status (none if there's no loan), the loan amount (0 if no loan), the number of transactions over the account's whole recorded history, total income, total expense, net balance, the number of clients whose home district lies in that region, the name of the most populous district in that region, that district's number of inhabitants, and the account district's population rank within its region. Order the rows by number of transactions, most first, with ties broken by ascending account id. The client's home district is the district recorded for the client, and population means number of inhabitants. For ranks, the most populous district is rank 1; districts with equal population share a rank and the next rank skips.",
+      "evidence": "PRIJEM = incoming transaction; VYDAJ = outgoing transaction; net balance = total income - total expense"
+    },
+    "sql": "WITH client_accounts AS (\n  SELECT a.account_id, a.date AS account_date, a.frequency,\n         d.district_id, d.A2 AS district_name, d.A3 AS region,\n         d.A4 AS district_pop, d.A11 AS avg_salary,\n         c.district_id AS home_district_id\n  FROM client c\n  JOIN disp dp ON dp.client_id = c.client_id\n  JOIN account a ON a.account_id = dp.account_id\n  JOIN district d ON d.district_id = a.district_id\n  WHERE c.client_id = 3541\n),\ntx AS (\n  SELECT account_id,\n         COUNT(*) AS tx_count,\n         SUM(CASE WHEN type = 'PRIJEM' THEN amount ELSE 0 END) AS income,\n         SUM(CASE WHEN type = 'VYDAJ' THEN amount ELSE 0 END) AS expense\n  FROM trans\n  GROUP BY account_id\n),\nregion_clients AS (\n  SELECT d.A3 AS region, COUNT(*) AS client_count\n  FROM client c JOIN district d ON d.district_id = c.district_id\n  GROUP BY d.A3\n),\nregion_top AS (\n  SELECT A3 AS region, A2 AS top_district, A4 AS top_pop\n  FROM (\n    SELECT A3, A2, A4,\n           ROW_NUMBER() OVER (PARTITION BY A3 ORDER BY CAST(A4 AS INTEGER) DESC, A2) AS rn\n    FROM district\n  ) WHERE rn = 1\n),\nranked AS (\n  SELECT district_id, A3 AS region,\n         RANK() OVER (PARTITION BY A3 ORDER BY CAST(A4 AS INTEGER) DESC) AS pop_rank\n  FROM district\n)\nSELECT ca.account_id,\n       ca.account_date,\n       ca.frequency,\n       ca.district_name,\n       ca.region,\n       CASE WHEN ca.district_id = ca.home_district_id THEN 'Yes' ELSE 'No' END AS is_home_district,\n       ca.avg_salary,\n       COALESCE(l.status, 'none') AS loan_status,\n       COALESCE(l.amount, 0) AS loan_amount,\n       COALESCE(tx.tx_count, 0) AS tx_count,\n       COALESCE(tx.income, 0) AS total_income,\n       COALESCE(tx.expense, 0) AS total_expense,\n       COALESCE(tx.income, 0) - COALESCE(tx.expense, 0) AS net_balance,\n       rc.client_count AS region_client_count,\n       rt.top_district,\n       rt.top_pop AS top_district_pop,\n       r.pop_rank AS district_pop_rank\nFROM client_accounts ca\nLEFT JOIN loan l ON l.account_id = ca.account_id\nLEFT JOIN tx ON tx.account_id = ca.account_id\nLEFT JOIN region_clients rc ON rc.region = ca.region\nLEFT JOIN region_top rt ON rt.region = ca.region\nLEFT JOIN ranked r ON r.district_id = ca.district_id\nORDER BY COALESCE(tx.tx_count, 0) DESC, ca.account_id ASC",
+    "schema": {
+      "account": {
+        "columns": {
+          "account_id": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "the id of the account",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "district_id": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "location of branch",
+            "documented_examples": "[18, 1]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "18",
+              "1"
+            ],
+            "samples_incomplete": true
+          },
+          "frequency": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "frequency of the acount",
+            "documented_examples": "['POPLATEK MESICNE']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "POPLATEK MESICNE",
+              "POPLATEK TYDNE"
+            ],
+            "samples_incomplete": true
+          },
+          "date": {
+            "type": "DATE",
+            "pk": false,
+            "description": "the creation date of the account",
+            "documented_examples": "['1995-03-24', '1993-02-26']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1995-03-24",
+              "1993-02-26"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "district_id",
+            "table": "district",
+            "target": "district_id"
+          }
+        ]
+      },
+      "card": {
+        "columns": {
+          "card_id": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "id number of credit card",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "disp_id": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "disposition id",
+            "documented_examples": "[9, 19]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "9",
+              "19"
+            ],
+            "samples_incomplete": true
+          },
+          "type": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "type of credit card",
+            "documented_examples": "['gold', 'classic']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "gold",
+              "classic"
+            ],
+            "samples_incomplete": true
+          },
+          "issued": {
+            "type": "DATE",
+            "pk": false,
+            "description": "the date when the credit card issued",
+            "documented_examples": "['1998-10-16', '1998-03-13']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1998-10-16",
+              "1998-03-13"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "disp_id",
+            "table": "disp",
+            "target": "disp_id"
+          }
+        ]
+      },
+      "client": {
+        "columns": {
+          "client_id": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "the unique number",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "gender": {
+            "type": "TEXT",
+            "pk": false,
+            "documented_examples": "['F', 'M']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "F",
+              "M"
+            ],
+            "samples_incomplete": true
+          },
+          "birth_date": {
+            "type": "DATE",
+            "pk": false,
+            "description": "birth date",
+            "documented_examples": "['1970-12-13', '1945-02-04']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1970-12-13",
+              "1945-02-04"
+            ],
+            "samples_incomplete": true
+          },
+          "district_id": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "location of branch",
+            "documented_examples": "[18, 1]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "18",
+              "1"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "district_id",
+            "table": "district",
+            "target": "district_id"
+          }
+        ]
+      },
+      "disp": {
+        "columns": {
+          "disp_id": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "unique number of identifying this row of record",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "client_id": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "id number of client",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "account_id": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "id number of account",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "type": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "type of disposition",
+            "documented_examples": "['OWNER', 'DISPONENT']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "OWNER",
+              "DISPONENT"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "client_id",
+            "table": "client",
+            "target": "client_id"
+          },
+          {
+            "column": "account_id",
+            "table": "account",
+            "target": "account_id"
+          }
+        ]
+      },
+      "district": {
+        "columns": {
+          "district_id": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "location of branch",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "A2": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "district_name",
+            "documented_examples": "['Hl.m. Praha', 'Benesov']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "Hl.m. Praha",
+              "Benesov"
+            ],
+            "samples_incomplete": true
+          },
+          "A3": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "region",
+            "documented_examples": "['Prague', 'central Bohemia']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "Prague",
+              "central Bohemia"
+            ],
+            "samples_incomplete": true
+          },
+          "A4": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "number of inhabitants",
+            "documented_examples": "['1204953', '88884']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1204953",
+              "88884"
+            ],
+            "samples_incomplete": true
+          },
+          "A5": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "municipality < district < region",
+            "documented_examples": "['0', '80']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "0",
+              "80"
+            ],
+            "samples_incomplete": true
+          },
+          "A6": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "municipality < district < region",
+            "documented_examples": "['0', '26']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "0",
+              "26"
+            ],
+            "samples_incomplete": true
+          },
+          "A7": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "municipality < district < region",
+            "documented_examples": "['0', '6']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "0",
+              "6"
+            ],
+            "samples_incomplete": true
+          },
+          "A8": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "municipality < district < region",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "A9": {
+            "type": "INTEGER",
+            "pk": false,
+            "documented_examples": "[1, 5]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "5"
+            ],
+            "samples_incomplete": true
+          },
+          "A10": {
+            "type": "REAL",
+            "pk": false,
+            "description": "ratio of urban inhabitants",
+            "documented_examples": "[100.0, 46.7]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "100.0",
+              "46.7"
+            ],
+            "samples_incomplete": true
+          },
+          "A11": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "average salary",
+            "documented_examples": "[12541, 8507]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "12541",
+              "8507"
+            ],
+            "samples_incomplete": true
+          },
+          "A12": {
+            "type": "REAL",
+            "pk": false,
+            "description": "unemployment rate 1995",
+            "documented_examples": "[0.2, 1.6]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "0.2",
+              "1.6"
+            ],
+            "samples_incomplete": true
+          },
+          "A13": {
+            "type": "REAL",
+            "pk": false,
+            "description": "unemployment rate 1996",
+            "documented_examples": "[0.43, 1.85]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "0.43",
+              "1.85"
+            ],
+            "samples_incomplete": true
+          },
+          "A14": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "no. of entrepreneurs per 1000 inhabitants",
+            "documented_examples": "[167, 132]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "167",
+              "132"
+            ],
+            "samples_incomplete": true
+          },
+          "A15": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "no. of committed crimes 1995",
+            "documented_examples": "[85677, 2159]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "85677",
+              "2159"
+            ],
+            "samples_incomplete": true
+          },
+          "A16": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "no. of committed crimes 1996",
+            "documented_examples": "[99107, 2674]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "99107",
+              "2674"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": []
+      },
+      "loan": {
+        "columns": {
+          "loan_id": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "the id number identifying the loan data",
+            "documented_examples": "[4959, 4961]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "4959",
+              "4961"
+            ],
+            "samples_incomplete": true
+          },
+          "account_id": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the id number identifying the account",
+            "documented_examples": "[2, 19]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "2",
+              "19"
+            ],
+            "samples_incomplete": true
+          },
+          "date": {
+            "type": "DATE",
+            "pk": false,
+            "description": "the date when the loan is approved",
+            "documented_examples": "['1994-01-05', '1996-04-29']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1994-01-05",
+              "1996-04-29"
+            ],
+            "samples_incomplete": true
+          },
+          "amount": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "approved amount",
+            "documented_examples": "[80952, 30276]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "80952",
+              "30276"
+            ],
+            "samples_incomplete": true
+          },
+          "duration": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "loan duration",
+            "documented_examples": "[24, 12]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "24",
+              "12"
+            ],
+            "samples_incomplete": true
+          },
+          "payments": {
+            "type": "REAL",
+            "pk": false,
+            "description": "monthly payments",
+            "documented_examples": "[3373.0, 2523.0]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "3373.0",
+              "2523.0"
+            ],
+            "samples_incomplete": true
+          },
+          "status": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "repayment status",
+            "documented_examples": "['A', 'B']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "A",
+              "B"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "account_id",
+            "table": "account",
+            "target": "account_id"
+          }
+        ]
+      },
+      "order": {
+        "columns": {
+          "order_id": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "identifying the unique order",
+            "documented_examples": "[29401, 29402]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "29401",
+              "29402"
+            ],
+            "samples_incomplete": true
+          },
+          "account_id": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "id number of account",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "bank_to": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "bank of the recipient",
+            "documented_examples": "['YZ', 'ST']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "YZ",
+              "ST"
+            ],
+            "samples_incomplete": true
+          },
+          "account_to": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "account of the recipient",
+            "documented_examples": "[87144583, 89597016]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "87144583",
+              "89597016"
+            ],
+            "samples_incomplete": true
+          },
+          "amount": {
+            "type": "REAL",
+            "pk": false,
+            "description": "debited amount",
+            "documented_examples": "[2452.0, 3372.7]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "2452.0",
+              "3372.7"
+            ],
+            "samples_incomplete": true
+          },
+          "k_symbol": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "purpose of the payment",
+            "documented_examples": "['SIPO', 'UVER']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "SIPO",
+              "UVER"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "account_id",
+            "table": "account",
+            "target": "account_id"
+          }
+        ]
+      },
+      "trans": {
+        "columns": {
+          "trans_id": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "transaction id",
+            "documented_examples": "[1, 5]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "5"
+            ],
+            "samples_incomplete": true
+          },
+          "account_id": {
+            "type": "INTEGER",
+            "pk": false,
+            "documented_examples": "[1]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1"
+            ],
+            "samples_incomplete": true
+          },
+          "date": {
+            "type": "DATE",
+            "pk": false,
+            "description": "date of transaction",
+            "documented_examples": "['1995-03-24', '1995-04-13']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1995-03-24",
+              "1995-04-13"
+            ],
+            "samples_incomplete": true
+          },
+          "type": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "+/- transaction",
+            "documented_examples": "['PRIJEM']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "PRIJEM"
+            ],
+            "samples_incomplete": true
+          },
+          "operation": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "mode of transaction",
+            "documented_examples": "['VKLAD', 'PREVOD Z UCTU']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "VKLAD",
+              "PREVOD Z UCTU"
+            ],
+            "samples_incomplete": true
+          },
+          "amount": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "amount of money",
+            "documented_examples": "[1000, 3679]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1000",
+              "3679"
+            ],
+            "samples_incomplete": true
+          },
+          "balance": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "balance after transaction",
+            "documented_examples": "[1000, 4679]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1000",
+              "4679"
+            ],
+            "samples_incomplete": true
+          },
+          "k_symbol": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "characterization of the transaction",
+            "documented_examples": "[]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              null
+            ],
+            "samples_incomplete": true
+          },
+          "bank": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "bank of the partner",
+            "documented_examples": "['AB']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              null,
+              "AB"
+            ],
+            "samples_incomplete": true
+          },
+          "account": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "account of the partner",
+            "documented_examples": "[41403269]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              null,
+              "41403269"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "account_id",
+            "table": "account",
+            "target": "account_id"
+          }
+        ]
+      }
+    },
+    "feedback": {
+      "status": "ok",
+      "columns": [
+        "account_id",
+        "account_date",
+        "frequency",
+        "district_name",
+        "region",
+        "is_home_district",
+        "avg_salary",
+        "loan_status",
+        "loan_amount",
+        "tx_count",
+        "total_income",
+        "total_expense"
+      ],
+      "preview_rows": [
+        [
+          2932,
+          "1993-05-04",
+          "POPLATEK MESICNE",
+          "Olomouc",
+          "north Moravia",
+          "No",
+          8994,
+          "none",
+          0,
+          655,
+          2821377,
+          2573180
+        ]
+      ],
+      "preview_row_count": 1,
+      "has_more": false,
+      "truncated": true,
+      "output_type_profile": {
+        "columns": [
+          {
+            "index": 0,
+            "name": "account_id",
+            "storage_classes": {
+              "integer": 1
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 0
+          },
+          {
+            "index": 1,
+            "name": "account_date",
+            "storage_classes": {
+              "text": 1
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 1
+          },
+          {
+            "index": 2,
+            "name": "frequency",
+            "storage_classes": {
+              "text": 1
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 1
+          },
+          {
+            "index": 3,
+            "name": "district_name",
+            "storage_classes": {
+              "text": 1
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 1
+          },
+          {
+            "index": 4,
+            "name": "region",
+            "storage_classes": {
+              "text": 1
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 1
+          },
+          {
+            "index": 5,
+            "name": "is_home_district",
+            "storage_classes": {
+              "text": 1
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 1
+          },
+          {
+            "index": 6,
+            "name": "avg_salary",
+            "storage_classes": {
+              "integer": 1
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 0
+          },
+          {
+            "index": 7,
+            "name": "loan_status",
+            "storage_classes": {
+              "text": 1
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 1
+          },
+          {
+            "index": 8,
+            "name": "loan_amount",
+            "storage_classes": {
+              "integer": 1
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 0
+          },
+          {
+            "index": 9,
+            "name": "tx_count",
+            "storage_classes": {
+              "integer": 1
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 0
+          },
+          {
+            "index": 10,
+            "name": "total_income",
+            "storage_classes": {
+              "integer": 1
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 0
+          },
+          {
+            "index": 11,
+            "name": "total_expense",
+            "storage_classes": {
+              "integer": 1
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 0
+          }
+        ],
+        "sampled_rows": 1,
+        "total_columns": 17,
+        "complete": true
+      }
+    },
+    "evaluation": {
+      "label": "submitted",
+      "candidate_sql_sha256": "13c3ffb6f0ab4051b373390199557bd0f6aa94c26bd46cb33c0e126c50391b62",
+      "status": "scored",
+      "score": 0.0,
+      "reference": {
+        "columns": [
+          "account_id",
+          "opening_date",
+          "frequency",
+          "district_where_held",
+          "region",
+          "is_client_home_district",
+          "district_avg_salary",
+          "loan_status",
+          "loan_amount",
+          "transaction_count",
+          "total_income",
+          "total_expense",
+          "net_balance",
+          "clients_home_district_in_region",
+          "most_populous_district",
+          "most_populous_inhabitants",
+          "population_rank_in_region"
+        ],
+        "row_count": 1,
+        "unique_row_count": 1,
+        "column_count": 17,
+        "result_sha256": "3733ccd9dcd0560c3211d9b7c17c4b9aa6a939b1496a0cb6b262c85d050421e1",
+        "complete": true
+      },
+      "reference_reused": false,
+      "candidate": {
+        "columns": [
+          "account_id",
+          "account_date",
+          "frequency",
+          "district_name",
+          "region",
+          "is_home_district",
+          "avg_salary",
+          "loan_status",
+          "loan_amount",
+          "tx_count",
+          "total_income",
+          "total_expense",
+          "net_balance",
+          "region_client_count",
+          "top_district",
+          "top_district_pop",
+          "district_pop_rank"
+        ],
+        "row_count": 1,
+        "unique_row_count": 1,
+        "column_count": 17,
+        "result_sha256": "a52cd3673d2f7591ff72476bf1eabe2d77e469603d3106649b0047b7e1a5fddb",
+        "complete": true
+      },
+      "candidate_reused": false,
+      "missing_rows": 1,
+      "extra_rows": 1,
+      "missing_examples": {
+        "rows": [
+          [
+            {
+              "value": "2932",
+              "truncated": false,
+              "storage_type": "int"
+            },
+            {
+              "value": "'1993-05-04'",
+              "truncated": false,
+              "storage_type": "str"
+            },
+            {
+              "value": "'POPLATEK MESICNE'",
+              "truncated": false,
+              "storage_type": "str"
+            },
+            {
+              "value": "'Olomouc'",
+              "truncated": false,
+              "storage_type": "str"
+            },
+            {
+              "value": "'north Moravia'",
+              "truncated": false,
+              "storage_type": "str"
+            },
+            {
+              "value": "'No'",
+              "truncated": false,
+              "storage_type": "str"
+            },
+            {
+              "value": "8994",
+              "truncated": false,
+              "storage_type": "int"
+            },
+            {
+              "value": "'none'",
+              "truncated": false,
+              "storage_type": "str"
+            },
+            {
+              "value": "0",
+              "truncated": false,
+              "storage_type": "int"
+            },
+            {
+              "value": "655",
+              "truncated": false,
+              "storage_type": "int"
+            },
+            {
+              "value": "2821377",
+              "truncated": false,
+              "storage_type": "int"
+            },
+            {
+              "value": "2573180",
+              "truncated": false,
+              "storage_type": "int"
+            }
+          ]
+        ],
+        "truncated": true
+      },
+      "extra_examples": {
+        "rows": [
+          [
+            {
+              "value": "2932",
+              "truncated": false,
+              "storage_type": "int"
+            },
+            {
+              "value": "'1993-05-04'",
+              "truncated": false,
+              "storage_type": "str"
+            },
+            {
+              "value": "'POPLATEK MESICNE'",
+              "truncated": false,
+              "storage_type": "str"
+            },
+            {
+              "value": "'Olomouc'",
+              "truncated": false,
+              "storage_type": "str"
+            },
+            {
+              "value": "'north Moravia'",
+              "truncated": false,
+              "storage_type": "str"
+            },
+            {
+              "value": "'No'",
+              "truncated": false,
+              "storage_type": "str"
+            },
+            {
+              "value": "8994",
+              "truncated": false,
+              "storage_type": "int"
+            },
+            {
+              "value": "'none'",
+              "truncated": false,
+              "storage_type": "str"
+            },
+            {
+              "value": "0",
+              "truncated": false,
+              "storage_type": "int"
+            },
+            {
+              "value": "655",
+              "truncated": false,
+              "storage_type": "int"
+            },
+            {
+              "value": "2821377",
+              "truncated": false,
+              "storage_type": "int"
+            },
+            {
+              "value": "2573180",
+              "truncated": false,
+              "storage_type": "int"
+            }
+          ]
+        ],
+        "truncated": true
+      },
+      "reason": "result_mismatch",
+      "elapsed_seconds": 1.3458757000043988
+    },
+    "model_replies": [
+      {
+        "event": "call_completed",
+        "run_id": "q222",
+        "question_id": "222",
+        "models": {
+          "selector": "deepseek-flash",
+          "decomposer": "deepseek-flash",
+          "refiner": "deepseek-flash"
+        },
+        "call_id": "62eb532ed0da486bab6b1bd442859d66",
+        "role": "decomposer",
+        "model": "deepseek-flash",
+        "response": "Plan:\n- Join client 3541 to accessible accounts via disp, account, district.\n- Aggregate transactions per account (count, income, expense, net).\n- Compute region client counts, most populous district, and population rank with window functions.\n\n```sql\nWITH client_accounts AS (\n  SELECT a.account_id, a.date AS account_date, a.frequency,\n         d.district_id, d.A2 AS district_name, d.A3 AS region,\n         d.A4 AS district_pop, d.A11 AS avg_salary,\n         c.district_id AS home_district_id\n  FROM client c\n  JOIN disp dp ON dp.client_id = c.client_id\n  JOIN account a ON a.account_id = dp.account_id\n  JOIN district d ON d.district_id = a.district_id\n  WHERE c.client_id = 3541\n),\ntx AS (\n  SELECT account_id,\n         COUNT(*) AS tx_count,\n         SUM(CASE WHEN type = 'PRIJEM' THEN amount ELSE 0 END) AS income,\n         SUM(CASE WHEN type = 'VYDAJ' THEN amount ELSE 0 END) AS expense\n  FROM trans\n  GROUP BY account_id\n),\nregion_clients AS (\n  SELECT d.A3 AS region, COUNT(*) AS client_count\n  FROM client c JOIN district d ON d.district_id = c.district_id\n  GROUP BY d.A3\n),\nregion_top AS (\n  SELECT A3 AS region, A2 AS top_district, A4 AS top_pop\n  FROM (\n    SELECT A3, A2, A4,\n           ROW_NUMBER() OVER (PARTITION BY A3 ORDER BY CAST(A4 AS INTEGER) DESC, A2) AS rn\n    FROM district\n  ) WHERE rn = 1\n),\nranked AS (\n  SELECT district_id, A3 AS region,\n         RANK() OVER (PARTITION BY A3 ORDER BY CAST(A4 AS INTEGER) DESC) AS pop_rank\n  FROM district\n)\nSELECT ca.account_id,\n       ca.account_date,\n       ca.frequency,\n       ca.district_name,\n       ca.region,\n       CASE WHEN ca.district_id = ca.home_district_id THEN 'Yes' ELSE 'No' END AS is_home_district,\n       ca.avg_salary,\n       COALESCE(l.status, 'none') AS loan_status,\n       COALESCE(l.amount, 0) AS loan_amount,\n       COALESCE(tx.tx_count, 0) AS tx_count,\n       COALESCE(tx.income, 0) AS total_income,\n       COALESCE(tx.expense, 0) AS total_expense,\n       COALESCE(tx.income, 0) - COALESCE(tx.expense, 0) AS net_balance,\n       rc.client_count AS region_client_count,\n       rt.top_district,\n       rt.top_pop AS top_district_pop,\n       r.pop_rank AS district_pop_rank\nFROM client_accounts ca\nLEFT JOIN loan l ON l.account_id = ca.account_id\nLEFT JOIN tx ON tx.account_id = ca.account_id\nLEFT JOIN region_clients rc ON rc.region = ca.region\nLEFT JOIN region_top rt ON rt.region = ca.region\nLEFT JOIN ranked r ON r.district_id = ca.district_id\nORDER BY COALESCE(tx.tx_count, 0) DESC, ca.account_id ASC\n```",
+        "response_id": "3fc331a7-5d29-477c-8c80-8be7843903ff",
+        "input_tokens": 1934,
+        "output_tokens": 735,
+        "simulated": false,
+        "raw_usage": {
+          "prompt_tokens": 1934,
+          "completion_tokens": 735,
+          "total_tokens": 2669,
+          "prompt_tokens_details": {
+            "cached_tokens": 1408
+          },
+          "prompt_cache_hit_tokens": 1408,
+          "prompt_cache_miss_tokens": 526,
+          "prompt_eval_count": 1934,
+          "eval_count": 735,
+          "response_format_contract": "text",
+          "finish_reason": "stop",
+          "ledger_request_id": "27aafd711d0749b2a758a4e15742bf2c",
+          "returned_model": "deepseek-flash"
+        },
+        "purpose": "generation_or_repair",
+        "elapsed_seconds": 4.37811629998032,
+        "duration_scope": "model_request",
+        "finish_reason": "stop",
+        "ledger_request_id": "27aafd711d0749b2a758a4e15742bf2c",
+        "trace_schema_version": 3,
+        "event_sequence": 11,
+        "timestamp": "2026-11-11T18:50:23.245874+00:00",
+        "elapsed": 4.5255390999955125
+      },
+      {
+        "event": "query_plan",
+        "run_id": "q222",
+        "question_id": "222",
+        "models": {
+          "selector": "deepseek-flash",
+          "decomposer": "deepseek-flash",
+          "refiner": "deepseek-flash"
+        },
+        "reasoning": "Plan:\n- Join client 3541 to accessible accounts via disp, account, district.\n- Aggregate transactions per account (count, income, expense, net).\n- Compute region client counts, most populous district, and population rank with window functions.\n\n```sql\nWITH client_accounts AS (\n  SELECT a.account_id, a.date AS account_date, a.frequency,\n         d.district_id, d.A2 AS district_name, d.A3 AS region,\n         d.A4 AS district_pop, d.A11 AS avg_salary,\n         c.district_id AS home_district_id\n  FROM client c\n  JOIN disp dp ON dp.client_id = c.client_id\n  JOIN account a ON a.account_id = dp.account_id\n  JOIN district d ON d.district_id = a.district_id\n  WHERE c.client_id = 3541\n),\ntx AS (\n  SELECT account_id,\n         COUNT(*) AS tx_count,\n         SUM(CASE WHEN type = 'PRIJEM' THEN amount ELSE 0 END) AS income,\n         SUM(CASE WHEN type = 'VYDAJ' THEN amount ELSE 0 END) AS expense\n  FROM trans\n  GROUP BY account_id\n),\nregion_clients AS (\n  SELECT d.A3 AS region, COUNT(*) AS client_count\n  FROM client c JOIN district d ON d.district_id = c.district_id\n  GROUP BY d.A3\n),\nregion_top AS (\n  SELECT A3 AS region, A2 AS top_district, A4 AS top_pop\n  FROM (\n    SELECT A3, A2, A4,\n           ROW_NUMBER() OVER (PARTITION BY A3 ORDER BY CAST(A4 AS INTEGER) DESC, A2) AS rn\n    FROM district\n  ) WHERE rn = 1\n),\nranked AS (\n  SELECT district_id, A3 AS region,\n         RANK() OVER (PARTITION BY A3 ORDER BY CAST(A4 AS INTEGER) DESC) AS pop_rank\n  FROM district\n)\nSELECT ca.account_id,\n       ca.account_date,\n       ca.frequency,\n       ca.district_name,\n       ca.region,\n       CASE WHEN ca.district_id = ca.home_district_id THEN 'Yes' ELSE 'No' END AS is_home_district,\n       ca.avg_salary,\n       COALESCE(l.status, 'none') AS loan_status,\n       COALESCE(l.amount, 0) AS loan_amount,\n       COALESCE(tx.tx_count, 0) AS tx_count,\n       COALESCE(tx.income, 0) AS total_income,\n       COALESCE(tx.expense, 0) AS total_expense,\n       COALESCE(tx.income, 0) - COALESCE(tx.expense, 0) AS net_balance,\n       rc.client_count AS region_client_count,\n       rt.top_district,\n       rt.top_pop AS top_district_pop,\n       r.pop_rank AS district_pop_rank\nFROM client_accounts ca\nLEFT JOIN loan l ON l.account_id = ca.account_id\nLEFT JOIN tx ON tx.account_id = ca.account_id\nLEFT JOIN region_clients rc ON rc.region = ca.region\nLEFT JOIN region_top rt ON rt.region = ca.region\nLEFT JOIN ranked r ON r.district_id = ca.district_id\nORDER BY COALESCE(tx.tx_count, 0) DESC, ca.account_id ASC\n```",
+        "sql": "WITH client_accounts AS (\n  SELECT a.account_id, a.date AS account_date, a.frequency,\n         d.district_id, d.A2 AS district_name, d.A3 AS region,\n         d.A4 AS district_pop, d.A11 AS avg_salary,\n         c.district_id AS home_district_id\n  FROM client c\n  JOIN disp dp ON dp.client_id = c.client_id\n  JOIN account a ON a.account_id = dp.account_id\n  JOIN district d ON d.district_id = a.district_id\n  WHERE c.client_id = 3541\n),\ntx AS (\n  SELECT account_id,\n         COUNT(*) AS tx_count,\n         SUM(CASE WHEN type = 'PRIJEM' THEN amount ELSE 0 END) AS income,\n         SUM(CASE WHEN type = 'VYDAJ' THEN amount ELSE 0 END) AS expense\n  FROM trans\n  GROUP BY account_id\n),\nregion_clients AS (\n  SELECT d.A3 AS region, COUNT(*) AS client_count\n  FROM client c JOIN district d ON d.district_id = c.district_id\n  GROUP BY d.A3\n),\nregion_top AS (\n  SELECT A3 AS region, A2 AS top_district, A4 AS top_pop\n  FROM (\n    SELECT A3, A2, A4,\n           ROW_NUMBER() OVER (PARTITION BY A3 ORDER BY CAST(A4 AS INTEGER) DESC, A2) AS rn\n    FROM district\n  ) WHERE rn = 1\n),\nranked AS (\n  SELECT district_id, A3 AS region,\n         RANK() OVER (PARTITION BY A3 ORDER BY CAST(A4 AS INTEGER) DESC) AS pop_rank\n  FROM district\n)\nSELECT ca.account_id,\n       ca.account_date,\n       ca.frequency,\n       ca.district_name,\n       ca.region,\n       CASE WHEN ca.district_id = ca.home_district_id THEN 'Yes' ELSE 'No' END AS is_home_district,\n       ca.avg_salary,\n       COALESCE(l.status, 'none') AS loan_status,\n       COALESCE(l.amount, 0) AS loan_amount,\n       COALESCE(tx.tx_count, 0) AS tx_count,\n       COALESCE(tx.income, 0) AS total_income,\n       COALESCE(tx.expense, 0) AS total_expense,\n       COALESCE(tx.income, 0) - COALESCE(tx.expense, 0) AS net_balance,\n       rc.client_count AS region_client_count,\n       rt.top_district,\n       rt.top_pop AS top_district_pop,\n       r.pop_rank AS district_pop_rank\nFROM client_accounts ca\nLEFT JOIN loan l ON l.account_id = ca.account_id\nLEFT JOIN tx ON tx.account_id = ca.account_id\nLEFT JOIN region_clients rc ON rc.region = ca.region\nLEFT JOIN region_top rt ON rt.region = ca.region\nLEFT JOIN ranked r ON r.district_id = ca.district_id\nORDER BY COALESCE(tx.tx_count, 0) DESC, ca.account_id ASC",
+        "reference_style": true,
+        "trace_schema_version": 3,
+        "event_sequence": 12,
+        "timestamp": "2026-11-11T18:50:23.247114+00:00",
+        "elapsed": 4.52676869998686
+      }
+    ],
+    "full_feedback": {
+      "status": "ok",
+      "columns": [
+        "account_id",
+        "account_date",
+        "frequency",
+        "district_name",
+        "region",
+        "is_home_district",
+        "avg_salary",
+        "loan_status",
+        "loan_amount",
+        "tx_count",
+        "total_income",
+        "total_expense"
+      ],
+      "column_count": 17,
+      "preview_rows": [
+        [
+          2932,
+          "1993-05-04",
+          "POPLATEK MESICNE",
+          "Olomouc",
+          "north Moravia",
+          "No",
+          8994,
+          "none",
+          0,
+          655,
+          2821377,
+          2573180
+        ]
+      ],
+      "preview_row_count": 1,
+      "has_more": false,
+      "truncated": true,
+      "output_type_profile": {
+        "columns": [
+          {
+            "index": 0,
+            "name": "account_id",
+            "storage_classes": {
+              "integer": 1
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 0
+          },
+          {
+            "index": 1,
+            "name": "account_date",
+            "storage_classes": {
+              "text": 1
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 1
+          },
+          {
+            "index": 2,
+            "name": "frequency",
+            "storage_classes": {
+              "text": 1
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 1
+          },
+          {
+            "index": 3,
+            "name": "district_name",
+            "storage_classes": {
+              "text": 1
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 1
+          },
+          {
+            "index": 4,
+            "name": "region",
+            "storage_classes": {
+              "text": 1
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 1
+          },
+          {
+            "index": 5,
+            "name": "is_home_district",
+            "storage_classes": {
+              "text": 1
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 1
+          },
+          {
+            "index": 6,
+            "name": "avg_salary",
+            "storage_classes": {
+              "integer": 1
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 0
+          },
+          {
+            "index": 7,
+            "name": "loan_status",
+            "storage_classes": {
+              "text": 1
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 1
+          },
+          {
+            "index": 8,
+            "name": "loan_amount",
+            "storage_classes": {
+              "integer": 1
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 0
+          },
+          {
+            "index": 9,
+            "name": "tx_count",
+            "storage_classes": {
+              "integer": 1
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 0
+          },
+          {
+            "index": 10,
+            "name": "total_income",
+            "storage_classes": {
+              "integer": 1
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 0
+          },
+          {
+            "index": 11,
+            "name": "total_expense",
+            "storage_classes": {
+              "integer": 1
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 0
+          },
+          {
+            "index": 12,
+            "name": "net_balance",
+            "storage_classes": {
+              "integer": 1
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 0
+          },
+          {
+            "index": 13,
+            "name": "region_client_count",
+            "storage_classes": {
+              "integer": 1
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 0
+          },
+          {
+            "index": 14,
+            "name": "top_district",
+            "storage_classes": {
+              "text": 1
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 1
+          },
+          {
+            "index": 15,
+            "name": "top_district_pop",
+            "storage_classes": {
+              "text": 1
+            },
+            "numeric_text_count": 1,
+            "other_text_count": 0
+          },
+          {
+            "index": 16,
+            "name": "district_pop_rank",
+            "storage_classes": {
+              "integer": 1
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 0
+          }
+        ],
+        "sampled_rows": 1,
+        "total_columns": 17,
+        "complete": true
+      }
+    }
+  },
+  {
+    "question_id": "490",
+    "source": "output\\issue123-deepseek-repair9-20261111\\q490",
+    "question": {
+      "question_id": "490",
+      "db_id": "toxicology",
+      "question": "I'm characterizing how strongly rare chemical elements are integrated into the molecular skeleton of carcinogenic compounds. For every carcinogenic molecule that contains at least one atom of an element that appears in no other molecule in the database, I want the number of bonds its atoms of that element take part in. Please judge an element's rarity over every molecule in the database, carcinogenic or not. Return the molecule_id and that bond count for each qualifying molecule, one row per molecule, sorted by molecule_id.",
+      "evidence": "'+' is the label of a carcinogenic molecule, '-' of a non-carcinogenic one; a bond is a link between two atoms of a molecule."
+    },
+    "sql": "SELECT a.molecule_id, COUNT(DISTINCT c.bond_id) AS bond_count\nFROM atom AS a\nJOIN connected AS c ON c.atom_id = a.atom_id\nJOIN molecule AS m ON m.molecule_id = a.molecule_id\nWHERE m.label = '+'\n  AND a.element IN (\n    SELECT element FROM atom GROUP BY element HAVING COUNT(DISTINCT molecule_id) = 1\n  )\nGROUP BY a.molecule_id\nORDER BY a.molecule_id",
+    "schema": {
+      "atom": {
+        "columns": {
+          "atom_id": {
+            "type": "TEXT",
+            "pk": true,
+            "description": "the unique id of atoms",
+            "documented_examples": "['TR000_1', 'TR000_2']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "TR000_1",
+              "TR000_2"
+            ],
+            "samples_incomplete": true
+          },
+          "molecule_id": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "identifying the molecule to which the atom belongs",
+            "documented_examples": "['TR000']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "TR000",
+              "TR001"
+            ],
+            "samples_incomplete": true
+          },
+          "element": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "the element of the toxicology",
+            "documented_examples": "['cl', 'c']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "cl",
+              "c"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "molecule_id",
+            "table": "molecule",
+            "target": "molecule_id"
+          }
+        ]
+      },
+      "bond": {
+        "columns": {
+          "bond_id": {
+            "type": "TEXT",
+            "pk": true,
+            "description": "unique id representing bonds",
+            "documented_examples": "['TR000_1_2', 'TR000_2_3']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "TR000_1_2",
+              "TR000_2_3"
+            ],
+            "samples_incomplete": true
+          },
+          "molecule_id": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "identifying the molecule in which the bond appears",
+            "documented_examples": "['TR000', 'TR001']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "TR000",
+              "TR001"
+            ],
+            "samples_incomplete": true
+          },
+          "bond_type": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "type of the bond",
+            "documented_examples": "['-', '=']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "-",
+              "="
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "molecule_id",
+            "table": "molecule",
+            "target": "molecule_id"
+          }
+        ]
+      },
+      "connected": {
+        "columns": {
+          "atom_id": {
+            "type": "TEXT",
+            "pk": true,
+            "description": "id of the first atom",
+            "documented_examples": "['TR000_1', 'TR000_2']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "TR000_1",
+              "TR000_2"
+            ],
+            "samples_incomplete": true
+          },
+          "atom_id2": {
+            "type": "TEXT",
+            "pk": true,
+            "description": "id of the second atom",
+            "documented_examples": "['TR000_2', 'TR000_1']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "TR000_2",
+              "TR000_1"
+            ],
+            "samples_incomplete": true
+          },
+          "bond_id": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "bond id representing bond between two atoms",
+            "documented_examples": "['TR000_1_2', 'TR000_2_3']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "TR000_1_2",
+              "TR000_2_3"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "bond_id",
+            "table": "bond",
+            "target": "bond_id"
+          },
+          {
+            "column": "atom_id2",
+            "table": "atom",
+            "target": "atom_id"
+          },
+          {
+            "column": "atom_id",
+            "table": "atom",
+            "target": "atom_id"
+          }
+        ]
+      },
+      "element": {
+        "columns": {
+          "element_id": {
+            "type": "TEXT",
+            "pk": true,
+            "documented_examples": "[]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [],
+            "samples_incomplete": true
+          },
+          "element_name": {
+            "type": "TEXT",
+            "pk": false,
+            "documented_examples": "[]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": []
+      },
+      "molecule": {
+        "columns": {
+          "molecule_id": {
+            "type": "TEXT",
+            "pk": true,
+            "description": "unique id of molecule",
+            "documented_examples": "['TR000', 'TR001']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "TR000",
+              "TR001"
+            ],
+            "samples_incomplete": true
+          },
+          "label": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "whether this molecule is carcinogenic or not",
+            "documented_examples": "['+', '-']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "+",
+              "-"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": []
+      }
+    },
+    "feedback": {
+      "status": "ok",
+      "columns": [
+        "molecule_id",
+        "bond_count"
+      ],
+      "preview_rows": [
+        [
+          "TR430",
+          6
+        ],
+        [
+          "TR499",
+          1
+        ]
+      ],
+      "preview_row_count": 2,
+      "has_more": false,
+      "truncated": false,
+      "output_type_profile": {
+        "columns": [
+          {
+            "index": 0,
+            "name": "molecule_id",
+            "storage_classes": {
+              "text": 2
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 2
+          },
+          {
+            "index": 1,
+            "name": "bond_count",
+            "storage_classes": {
+              "integer": 2
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 0
+          }
+        ],
+        "sampled_rows": 2,
+        "total_columns": 2,
+        "complete": true
+      }
+    },
+    "evaluation": {
+      "label": "submitted",
+      "candidate_sql_sha256": "a396fdb0a1452a93e5907f9fcd1834f10fa010af347597df529450598dd984d3",
+      "status": "scored",
+      "score": 0.0,
+      "reference": {
+        "columns": [
+          "molecule_id",
+          "bond_count"
+        ],
+        "row_count": 3,
+        "unique_row_count": 3,
+        "column_count": 2,
+        "result_sha256": "c1459d5f9464ae0259ec99bc5d4af8b37ed6fd5ab1ec6ece2a1ad78e9316ac55",
+        "complete": true
+      },
+      "reference_reused": false,
+      "candidate": {
+        "columns": [
+          "molecule_id",
+          "bond_count"
+        ],
+        "row_count": 2,
+        "unique_row_count": 2,
+        "column_count": 2,
+        "result_sha256": "50cef23944c6166bf750090257a7dee8c3d17826676d94590ae14c17ace48ab8",
+        "complete": true
+      },
+      "candidate_reused": false,
+      "missing_rows": 1,
+      "extra_rows": 0,
+      "missing_examples": {
+        "rows": [
+          [
+            {
+              "value": "'TR238'",
+              "truncated": false,
+              "storage_type": "str"
+            },
+            {
+              "value": "0",
+              "truncated": false,
+              "storage_type": "int"
+            }
+          ]
+        ],
+        "truncated": false
+      },
+      "extra_examples": {
+        "rows": [],
+        "truncated": false
+      },
+      "reason": "result_mismatch",
+      "elapsed_seconds": 0.021934499993221834
+    },
+    "model_replies": [
+      {
+        "event": "call_completed",
+        "run_id": "q490",
+        "question_id": "490",
+        "models": {
+          "selector": "deepseek-flash",
+          "decomposer": "deepseek-flash",
+          "refiner": "deepseek-flash"
+        },
+        "call_id": "1126c67e53144f999bc5d4f3dbfb3440",
+        "role": "decomposer",
+        "model": "deepseek-flash",
+        "response": "Plan:\n- Find elements appearing in exactly one molecule across all atoms.\n- For carcinogenic molecules, count bonds involving atoms of those rare elements.\n- Return molecule_id and bond count, one row per molecule.\n\n```sql\nSELECT a.molecule_id, COUNT(DISTINCT c.bond_id) AS bond_count\nFROM atom AS a\nJOIN connected AS c ON c.atom_id = a.atom_id\nJOIN molecule AS m ON m.molecule_id = a.molecule_id\nWHERE m.label = '+'\n  AND a.element IN (\n    SELECT element FROM atom GROUP BY element HAVING COUNT(DISTINCT molecule_id) = 1\n  )\nGROUP BY a.molecule_id\nORDER BY a.molecule_id\n```",
+        "response_id": "3b7bb6cf-456b-437a-8207-fb4c6f881d71",
+        "input_tokens": 896,
+        "output_tokens": 152,
+        "simulated": false,
+        "raw_usage": {
+          "prompt_tokens": 896,
+          "completion_tokens": 152,
+          "total_tokens": 1048,
+          "prompt_tokens_details": {
+            "cached_tokens": 384
+          },
+          "prompt_cache_hit_tokens": 384,
+          "prompt_cache_miss_tokens": 512,
+          "prompt_eval_count": 896,
+          "eval_count": 152,
+          "response_format_contract": "text",
+          "finish_reason": "stop",
+          "ledger_request_id": "4c7ca88e3c964bf3a0609ffdafa9cbb5",
+          "returned_model": "deepseek-flash"
+        },
+        "purpose": "generation_or_repair",
+        "elapsed_seconds": 1.9015369999979157,
+        "duration_scope": "model_request",
+        "finish_reason": "stop",
+        "ledger_request_id": "4c7ca88e3c964bf3a0609ffdafa9cbb5",
+        "trace_schema_version": 3,
+        "event_sequence": 15,
+        "timestamp": "2026-11-11T18:51:10.358948+00:00",
+        "elapsed": 1.9803596999845468
+      },
+      {
+        "event": "query_plan",
+        "run_id": "q490",
+        "question_id": "490",
+        "models": {
+          "selector": "deepseek-flash",
+          "decomposer": "deepseek-flash",
+          "refiner": "deepseek-flash"
+        },
+        "reasoning": "Plan:\n- Find elements appearing in exactly one molecule across all atoms.\n- For carcinogenic molecules, count bonds involving atoms of those rare elements.\n- Return molecule_id and bond count, one row per molecule.\n\n```sql\nSELECT a.molecule_id, COUNT(DISTINCT c.bond_id) AS bond_count\nFROM atom AS a\nJOIN connected AS c ON c.atom_id = a.atom_id\nJOIN molecule AS m ON m.molecule_id = a.molecule_id\nWHERE m.label = '+'\n  AND a.element IN (\n    SELECT element FROM atom GROUP BY element HAVING COUNT(DISTINCT molecule_id) = 1\n  )\nGROUP BY a.molecule_id\nORDER BY a.molecule_id\n```",
+        "sql": "SELECT a.molecule_id, COUNT(DISTINCT c.bond_id) AS bond_count\nFROM atom AS a\nJOIN connected AS c ON c.atom_id = a.atom_id\nJOIN molecule AS m ON m.molecule_id = a.molecule_id\nWHERE m.label = '+'\n  AND a.element IN (\n    SELECT element FROM atom GROUP BY element HAVING COUNT(DISTINCT molecule_id) = 1\n  )\nGROUP BY a.molecule_id\nORDER BY a.molecule_id",
+        "reference_style": true,
+        "trace_schema_version": 3,
+        "event_sequence": 16,
+        "timestamp": "2026-11-11T18:51:10.359330+00:00",
+        "elapsed": 1.9807329000032041
+      }
+    ],
+    "full_feedback": {
+      "status": "ok",
+      "columns": [
+        "molecule_id",
+        "bond_count"
+      ],
+      "column_count": 2,
+      "preview_rows": [
+        [
+          "TR430",
+          6
+        ],
+        [
+          "TR499",
+          1
+        ]
+      ],
+      "preview_row_count": 2,
+      "has_more": false,
+      "truncated": false,
+      "output_type_profile": {
+        "columns": [
+          {
+            "index": 0,
+            "name": "molecule_id",
+            "storage_classes": {
+              "text": 2
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 2
+          },
+          {
+            "index": 1,
+            "name": "bond_count",
+            "storage_classes": {
+              "integer": 2
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 0
+          }
+        ],
+        "sampled_rows": 2,
+        "total_columns": 2,
+        "complete": true
+      }
+    }
+  },
+  {
+    "question_id": "119",
+    "source": "output\\issue123-deepseek-repair9-20261111\\q119",
+    "question": {
+      "question_id": "119",
+      "db_id": "codebase_community",
+      "question": "Which users made exactly one history entry on at least one post with at least 1,000 views? Return their distinct user IDs.",
+      "evidence": ""
+    },
+    "sql": "SELECT DISTINCT ph.UserId\nFROM postHistory AS ph\nJOIN posts AS p ON p.Id = ph.PostId\nWHERE p.ViewCount >= 1000\nGROUP BY ph.UserId, ph.PostId\nHAVING COUNT(*) = 1",
+    "schema": {
+      "badges": {
+        "columns": {
+          "Id": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "the badge id",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "UserId": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the unique id of the user",
+            "documented_examples": "[5, 6]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "5",
+              "6"
+            ],
+            "samples_incomplete": true
+          },
+          "Name": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "the badge name the user obtained",
+            "documented_examples": "['Teacher']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "Teacher",
+              "Student"
+            ],
+            "samples_incomplete": true
+          },
+          "Date": {
+            "type": "DATETIME",
+            "pk": false,
+            "description": "the date that the user obtained the badge",
+            "documented_examples": "['2010-07-19 19:39:07.0']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "2010-07-19 19:39:07.0",
+              "2010-07-19 19:39:08.0"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "UserId",
+            "table": "users",
+            "target": "Id"
+          }
+        ]
+      },
+      "comments": {
+        "columns": {
+          "Id": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "the comment Id",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "PostId": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the unique id of the post",
+            "documented_examples": "[3, 5]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "3",
+              "5"
+            ],
+            "samples_incomplete": true
+          },
+          "Score": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "rating score",
+            "documented_examples": "[5, 0]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "5",
+              "0"
+            ],
+            "samples_incomplete": true
+          },
+          "Text": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "the detailed content of the comment",
+            "documented_examples": "['Could be a poster child fo argumentative and subjective. At the least, need to d', \"Yes, R is nice- but WHY is it 'valuable'.\"]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "Could be a poster child fo argumentative and subjective.  At the least, need to define 'valuable'.",
+              "Yes, R is nice- but WHY is it 'valuable'."
+            ],
+            "samples_incomplete": true
+          },
+          "CreationDate": {
+            "type": "DATETIME",
+            "pk": false,
+            "description": "the creation date of the comment",
+            "documented_examples": "['2010-07-19 19:15:52.0', '2010-07-19 19:16:14.0']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "2010-07-19 19:15:52.0",
+              "2010-07-19 19:16:14.0"
+            ],
+            "samples_incomplete": true
+          },
+          "UserId": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the id of the user who post the comment",
+            "documented_examples": "[13, 37]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "13",
+              "37"
+            ],
+            "samples_incomplete": true
+          },
+          "UserDisplayName": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "user's display name",
+            "documented_examples": "[]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              null,
+              "user28"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "UserId",
+            "table": "users",
+            "target": "Id"
+          },
+          {
+            "column": "PostId",
+            "table": "posts",
+            "target": "Id"
+          }
+        ]
+      },
+      "postHistory": {
+        "columns": {
+          "Id": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "the post history id",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "PostHistoryTypeId": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the id of the post history type",
+            "documented_examples": "[2, 1]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "2",
+              "1"
+            ],
+            "samples_incomplete": true
+          },
+          "PostId": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the unique id of the post",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "RevisionGUID": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "the revision globally unique id of the post",
+            "documented_examples": "['e58bf7fd-e60f-4c58-a6e4-dfc91cf98a69', '18bf9150-f1cb-432d-b7b7-26d2f8e33581']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "e58bf7fd-e60f-4c58-a6e4-dfc91cf98a69",
+              "18bf9150-f1cb-432d-b7b7-26d2f8e33581"
+            ],
+            "samples_incomplete": true
+          },
+          "CreationDate": {
+            "type": "DATETIME",
+            "pk": false,
+            "description": "the creation date of the post",
+            "documented_examples": "['2010-07-19 19:12:12.0', '2010-07-19 19:12:57.0']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "2010-07-19 19:12:12.0",
+              "2010-07-19 19:12:57.0"
+            ],
+            "samples_incomplete": true
+          },
+          "UserId": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the user who post the post",
+            "documented_examples": "[8, 24]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "8",
+              "24"
+            ],
+            "samples_incomplete": true
+          },
+          "Text": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "the detailed content of the post",
+            "documented_examples": "['How should I elicit prior distributions from experts when fitting a Bayesian mod', 'Eliciting priors from experts']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "How should I elicit prior distributions from experts when fitting a Bayesian model?",
+              "Eliciting priors from experts"
+            ],
+            "samples_incomplete": true
+          },
+          "Comment": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "comments of the post",
+            "documented_examples": "['']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              ""
+            ],
+            "samples_incomplete": true
+          },
+          "UserDisplayName": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "user's display name",
+            "documented_examples": "['']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              ""
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "UserId",
+            "table": "users",
+            "target": "Id"
+          },
+          {
+            "column": "PostId",
+            "table": "posts",
+            "target": "Id"
+          }
+        ]
+      },
+      "postLinks": {
+        "columns": {
+          "Id": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "the post link id",
+            "documented_examples": "[108, 145]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "108",
+              "145"
+            ],
+            "samples_incomplete": true
+          },
+          "CreationDate": {
+            "type": "DATETIME",
+            "pk": false,
+            "description": "the creation date of the post link",
+            "documented_examples": "['2010-07-21 14:47:33.0', '2010-07-23 16:30:41.0']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "2010-07-21 14:47:33.0",
+              "2010-07-23 16:30:41.0"
+            ],
+            "samples_incomplete": true
+          },
+          "PostId": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the post id",
+            "documented_examples": "[395, 548]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "395",
+              "548"
+            ],
+            "samples_incomplete": true
+          },
+          "RelatedPostId": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the id of the related post",
+            "documented_examples": "[173, 539]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "173",
+              "539"
+            ],
+            "samples_incomplete": true
+          },
+          "LinkTypeId": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the id of the link type",
+            "documented_examples": "[1]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "RelatedPostId",
+            "table": "posts",
+            "target": "Id"
+          },
+          {
+            "column": "PostId",
+            "table": "posts",
+            "target": "Id"
+          }
+        ]
+      },
+      "posts": {
+        "columns": {
+          "Id": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "the post id",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "PostTypeId": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the id of the post type",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "AcceptedAnswerId": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the accepted answer id of the post",
+            "documented_examples": "[15, 59]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "15",
+              "59"
+            ],
+            "samples_incomplete": true
+          },
+          "CreaionDate": {
+            "type": "DATETIME",
+            "pk": false,
+            "description": "the creation date of the post",
+            "documented_examples": "['2010-07-19 19:12:12.0', '2010-07-19 19:12:57.0']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "2010-07-19 19:12:12.0",
+              "2010-07-19 19:12:57.0"
+            ],
+            "samples_incomplete": true
+          },
+          "Score": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the score of the post",
+            "documented_examples": "[23, 22]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "23",
+              "22"
+            ],
+            "samples_incomplete": true
+          },
+          "ViewCount": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the view count of the post",
+            "documented_examples": "[1278, 8198]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1278",
+              "8198"
+            ],
+            "samples_incomplete": true
+          },
+          "Body": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "the body of the post",
+            "documented_examples": "['<p>How should I elicit prior distributions from experts when fitting a Bayesian ', '<p>In many different statistical methods there is an \"assumption of normality\". ']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "<p>How should I elicit prior distributions from experts when fitting a Bayesian model?</p>\n",
+              "<p>In many different statistical methods there is an \"assumption of normality\".  What is \"normality\" and how do I know if there is normality?</p>\n"
+            ],
+            "samples_incomplete": true
+          },
+          "OwnerUserId": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the id of the owner user",
+            "documented_examples": "[8, 24]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "8",
+              "24"
+            ],
+            "samples_incomplete": true
+          },
+          "LasActivityDate": {
+            "type": "DATETIME",
+            "pk": false,
+            "description": "the last activity date",
+            "documented_examples": "['2010-09-15 21:08:26.0', '2012-11-12 09:21:54.0']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "2010-09-15 21:08:26.0",
+              "2012-11-12 09:21:54.0"
+            ],
+            "samples_incomplete": true
+          },
+          "Title": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "the title of the post",
+            "documented_examples": "['Eliciting priors from experts', 'What is normality?']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "Eliciting priors from experts",
+              "What is normality?"
+            ],
+            "samples_incomplete": true
+          },
+          "Tags": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "the tag of the post",
+            "documented_examples": "['<bayesian><prior><elicitation>', '<distributions><normality>']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "<bayesian><prior><elicitation>",
+              "<distributions><normality>"
+            ],
+            "samples_incomplete": true
+          },
+          "AnswerCount": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the total number of answers of the post",
+            "documented_examples": "[5, 7]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "5",
+              "7"
+            ],
+            "samples_incomplete": true
+          },
+          "CommentCount": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the total number of comments of the post",
+            "documented_examples": "[1, 4]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "4"
+            ],
+            "samples_incomplete": true
+          },
+          "FavoriteCount": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the total number of favorites of the post",
+            "documented_examples": "[14, 8]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "14",
+              "8"
+            ],
+            "samples_incomplete": true
+          },
+          "LastEditorUserId": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the id of the last editor",
+            "documented_examples": "[88, 183]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              null,
+              "88"
+            ],
+            "samples_incomplete": true
+          },
+          "LastEditDate": {
+            "type": "DATETIME",
+            "pk": false,
+            "description": "the last edit date",
+            "documented_examples": "['2010-08-07 17:56:44.0', '2011-02-12 05:50:03.0']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              null,
+              "2010-08-07 17:56:44.0"
+            ],
+            "samples_incomplete": true
+          },
+          "CommunityOwnedDate": {
+            "type": "DATETIME",
+            "pk": false,
+            "description": "the community owned date",
+            "documented_examples": "['2010-07-19 19:13:28.0', '2010-07-19 19:14:43.0']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              null,
+              "2010-07-19 19:13:28.0"
+            ],
+            "samples_incomplete": true
+          },
+          "ParentId": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the id of the parent post",
+            "documented_examples": "[3]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              null,
+              "3"
+            ],
+            "samples_incomplete": true
+          },
+          "ClosedDate": {
+            "type": "DATETIME",
+            "pk": false,
+            "description": "the closed date of the post",
+            "documented_examples": "[]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              null,
+              "2010-07-19 20:19:46.0"
+            ],
+            "samples_incomplete": true
+          },
+          "OwnerDisplayName": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "the display name of the post owner",
+            "documented_examples": "[]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              null,
+              "user28"
+            ],
+            "samples_incomplete": true
+          },
+          "LastEditorDisplayName": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "the display name of the last editor",
+            "documented_examples": "[]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              null
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "ParentId",
+            "table": "posts",
+            "target": "Id"
+          },
+          {
+            "column": "OwnerUserId",
+            "table": "users",
+            "target": "Id"
+          },
+          {
+            "column": "LastEditorUserId",
+            "table": "users",
+            "target": "Id"
+          }
+        ]
+      },
+      "tags": {
+        "columns": {
+          "Id": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "the tag id",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "TagName": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "the name of the tag",
+            "documented_examples": "['bayesian', 'prior']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "bayesian",
+              "prior"
+            ],
+            "samples_incomplete": true
+          },
+          "Count": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the count of posts that contain this tag",
+            "documented_examples": "[1342, 168]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1342",
+              "168"
+            ],
+            "samples_incomplete": true
+          },
+          "ExcerptPostId": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the excerpt post id of the tag",
+            "documented_examples": "[20258, 62158]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "20258",
+              "62158"
+            ],
+            "samples_incomplete": true
+          },
+          "WikiPostId": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the wiki post id of the tag",
+            "documented_examples": "[20257, 62157]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "20257",
+              "62157"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "ExcerptPostId",
+            "table": "posts",
+            "target": "Id"
+          }
+        ]
+      },
+      "users": {
+        "columns": {
+          "Id": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "the user id",
+            "documented_examples": "[-1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "-1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "Reputation": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the user's reputation",
+            "documented_examples": "[1, 101]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "101"
+            ],
+            "samples_incomplete": true
+          },
+          "CreationDate": {
+            "type": "DATETIME",
+            "pk": false,
+            "description": "the creation date of the user account",
+            "documented_examples": "['2010-07-19 06:55:26.0', '2010-07-19 14:01:36.0']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "2010-07-19 06:55:26.0",
+              "2010-07-19 14:01:36.0"
+            ],
+            "samples_incomplete": true
+          },
+          "DisplayName": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "the user's display name",
+            "documented_examples": "['Community', 'Geoff Dalgas']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "Community",
+              "Geoff Dalgas"
+            ],
+            "samples_incomplete": true
+          },
+          "LastAccessDate": {
+            "type": "DATETIME",
+            "pk": false,
+            "description": "the last access date of the user account",
+            "documented_examples": "['2010-07-19 06:55:26.0', '2013-11-12 22:07:23.0']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "2010-07-19 06:55:26.0",
+              "2013-11-12 22:07:23.0"
+            ],
+            "samples_incomplete": true
+          },
+          "WebsiteUrl": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "the website url of the user account",
+            "documented_examples": "['http://meta.stackexchange.com/', 'http://stackoverflow.com']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "http://meta.stackexchange.com/",
+              "http://stackoverflow.com"
+            ],
+            "samples_incomplete": true
+          },
+          "Location": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "user's location",
+            "documented_examples": "['on the server farm', 'Corvallis, OR']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "on the server farm",
+              "Corvallis, OR"
+            ],
+            "samples_incomplete": true
+          },
+          "AboutMe": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "the self introduction of the user",
+            "documented_examples": "[\"<p>Hi, I'm not really a person.</p> <p>I'm a background process that helps keep \", '<p>Developer on the StackOverflow team. Find me on</p> <p><a href=\"http://www.tw']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "<p>Hi, I'm not really a person.</p>\n\n<p>I'm a background process that helps keep this site clean!</p>\n\n<p>I do things like</p>\n\n<ul>\n<li>Randomly poke old unans",
+              "<p>Developer on the StackOverflow team.  Find me on</p>\n\n<p><a href=\"http://www.twitter.com/SuperDalgas\" rel=\"nofollow\">Twitter</a>\n<br><br>\n<a href=\"http://blo"
+            ],
+            "samples_incomplete": true,
+            "sample_cells_truncated": true
+          },
+          "Views": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the number of views",
+            "documented_examples": "[0, 25]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "0",
+              "25"
+            ],
+            "samples_incomplete": true
+          },
+          "UpVotes": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the number of upvotes",
+            "documented_examples": "[5007, 3]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "5007",
+              "3"
+            ],
+            "samples_incomplete": true
+          },
+          "DownVotes": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the number of downvotes",
+            "documented_examples": "[1920, 0]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1920",
+              "0"
+            ],
+            "samples_incomplete": true
+          },
+          "AccountId": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the unique id of the account",
+            "documented_examples": "[-1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "-1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "Age": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "user's age",
+            "documented_examples": "[37, 35]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              null,
+              "37"
+            ],
+            "samples_incomplete": true
+          },
+          "ProfileImageUrl": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "the profile image url",
+            "documented_examples": "['http://i.stack.imgur.com/d1oHX.jpg']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              null,
+              "http://i.stack.imgur.com/d1oHX.jpg"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": []
+      },
+      "votes": {
+        "columns": {
+          "Id": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "the vote id",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "PostId": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the id of the post that is voted",
+            "documented_examples": "[3, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "3",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "VoteTypeId": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the id of the vote type",
+            "documented_examples": "[2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "2",
+              "5"
+            ],
+            "samples_incomplete": true
+          },
+          "CreationDate": {
+            "type": "DATE",
+            "pk": false,
+            "description": "the creation date of the vote",
+            "documented_examples": "['2010-07-19']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "2010-07-19"
+            ],
+            "samples_incomplete": true
+          },
+          "UserId": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the id of the voter",
+            "documented_examples": "[]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              null,
+              "58"
+            ],
+            "samples_incomplete": true
+          },
+          "BountyAmount": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the amount of bounty",
+            "documented_examples": "[]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              null
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "UserId",
+            "table": "users",
+            "target": "Id"
+          },
+          {
+            "column": "PostId",
+            "table": "posts",
+            "target": "Id"
+          }
+        ]
+      }
+    },
+    "feedback": {
+      "status": "ok",
+      "columns": [
+        "UserId"
+      ],
+      "preview_rows": [
+        [
+          null
+        ],
+        [
+          -1
+        ],
+        [
+          5
+        ],
+        [
+          8
+        ],
+        [
+          18
+        ]
+      ],
+      "preview_row_count": 5,
+      "has_more": true,
+      "truncated": true,
+      "output_type_profile": {
+        "columns": [
+          {
+            "index": 0,
+            "name": "UserId",
+            "storage_classes": {
+              "null": 1,
+              "integer": 270
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 0
+          }
+        ],
+        "sampled_rows": 271,
+        "total_columns": 1,
+        "complete": true
+      }
+    },
+    "evaluation": {
+      "label": "submitted",
+      "candidate_sql_sha256": "6680bdc9788bdb41c82736a3770f0f3e996ff37824faf66951f5f90b7e2591c5",
+      "status": "scored",
+      "score": 0.0,
+      "reference": {
+        "columns": [
+          "UserId"
+        ],
+        "row_count": 270,
+        "unique_row_count": 270,
+        "column_count": 1,
+        "result_sha256": "4748d7d072a3ea9b4d92c37b8805841cf6bbcd54d174c7e95b044fec4ec489d4",
+        "complete": true
+      },
+      "reference_reused": false,
+      "candidate": {
+        "columns": [
+          "UserId"
+        ],
+        "row_count": 271,
+        "unique_row_count": 271,
+        "column_count": 1,
+        "result_sha256": "b1c7213e2db22b841246c188163afb416a39003f7f92b680782c7a16d22ec4d8",
+        "complete": true
+      },
+      "candidate_reused": false,
+      "missing_rows": 0,
+      "extra_rows": 1,
+      "missing_examples": {
+        "rows": [],
+        "truncated": false
+      },
+      "extra_examples": {
+        "rows": [
+          [
+            {
+              "value": "None",
+              "truncated": false,
+              "storage_type": "NoneType"
+            }
+          ]
+        ],
+        "truncated": false
+      },
+      "reason": "result_mismatch",
+      "elapsed_seconds": 1.0764620999980252
+    },
+    "model_replies": [
+      {
+        "event": "call_completed",
+        "run_id": "q119",
+        "question_id": "119",
+        "models": {
+          "selector": "deepseek-flash",
+          "decomposer": "deepseek-flash",
+          "refiner": "deepseek-flash"
+        },
+        "call_id": "bd5549d8922f454abc6cca3ecf33d32c",
+        "role": "decomposer",
+        "model": "deepseek-flash",
+        "response": "Count history entries per user per post, keep groups with exactly one entry, join to posts with ViewCount >= 1000, return distinct user IDs.\n```sql\nSELECT DISTINCT ph.UserId\nFROM postHistory AS ph\nJOIN posts AS p ON p.Id = ph.PostId\nWHERE p.ViewCount >= 1000\nGROUP BY ph.UserId, ph.PostId\nHAVING COUNT(*) = 1\n```",
+        "response_id": "1ac742ba-fa18-4b83-bfac-16dca9776b8f",
+        "input_tokens": 2682,
+        "output_tokens": 89,
+        "simulated": false,
+        "raw_usage": {
+          "prompt_tokens": 2682,
+          "completion_tokens": 89,
+          "total_tokens": 2771,
+          "prompt_tokens_details": {
+            "cached_tokens": 2304
+          },
+          "prompt_cache_hit_tokens": 2304,
+          "prompt_cache_miss_tokens": 378,
+          "prompt_eval_count": 2682,
+          "eval_count": 89,
+          "response_format_contract": "text",
+          "finish_reason": "stop",
+          "ledger_request_id": "e0176d10fe5a446a95815afcbc4ba7e4",
+          "returned_model": "deepseek-flash"
+        },
+        "purpose": "generation_or_repair",
+        "elapsed_seconds": 1.5017894000047818,
+        "duration_scope": "model_request",
+        "finish_reason": "stop",
+        "ledger_request_id": "e0176d10fe5a446a95815afcbc4ba7e4",
+        "trace_schema_version": 3,
+        "event_sequence": 11,
+        "timestamp": "2026-11-11T18:51:15.683379+00:00",
+        "elapsed": 2.288693600014085
+      },
+      {
+        "event": "query_plan",
+        "run_id": "q119",
+        "question_id": "119",
+        "models": {
+          "selector": "deepseek-flash",
+          "decomposer": "deepseek-flash",
+          "refiner": "deepseek-flash"
+        },
+        "reasoning": "Count history entries per user per post, keep groups with exactly one entry, join to posts with ViewCount >= 1000, return distinct user IDs.\n```sql\nSELECT DISTINCT ph.UserId\nFROM postHistory AS ph\nJOIN posts AS p ON p.Id = ph.PostId\nWHERE p.ViewCount >= 1000\nGROUP BY ph.UserId, ph.PostId\nHAVING COUNT(*) = 1\n```",
+        "sql": "SELECT DISTINCT ph.UserId\nFROM postHistory AS ph\nJOIN posts AS p ON p.Id = ph.PostId\nWHERE p.ViewCount >= 1000\nGROUP BY ph.UserId, ph.PostId\nHAVING COUNT(*) = 1",
+        "reference_style": true,
+        "trace_schema_version": 3,
+        "event_sequence": 12,
+        "timestamp": "2026-11-11T18:51:15.683705+00:00",
+        "elapsed": 2.289011400018353
+      }
+    ],
+    "full_feedback": {
+      "status": "ok",
+      "columns": [
+        "UserId"
+      ],
+      "column_count": 1,
+      "preview_rows": [
+        [
+          null
+        ],
+        [
+          -1
+        ],
+        [
+          5
+        ],
+        [
+          8
+        ],
+        [
+          18
+        ]
+      ],
+      "preview_row_count": 5,
+      "has_more": true,
+      "truncated": true,
+      "output_type_profile": {
+        "columns": [
+          {
+            "index": 0,
+            "name": "UserId",
+            "storage_classes": {
+              "null": 1,
+              "integer": 270
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 0
+          }
+        ],
+        "sampled_rows": 271,
+        "total_columns": 1,
+        "complete": true
+      }
+    }
+  }
+]

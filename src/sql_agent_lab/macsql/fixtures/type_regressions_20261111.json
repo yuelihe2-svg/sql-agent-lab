@@ -1,0 +1,2336 @@
+[
+  {
+    "question_id": "150",
+    "sql": "WITH seg AS (\n  SELECT c.Segment,\n         SUM(CASE WHEN substr(y.Date,1,4) = '2012' THEN y.Consumption ELSE 0 END) AS total2012,\n         SUM(CASE WHEN substr(y.Date,1,4) = '2013' THEN y.Consumption ELSE 0 END) AS total2013\n  FROM yearmonth AS y\n  JOIN customers AS c ON c.CustomerID = y.CustomerID\n  WHERE c.Currency = 'EUR' AND c.Segment IN ('SME','LAM','KAM')\n  GROUP BY c.Segment\n),\npct AS (\n  SELECT Segment,\n         ROUND((total2013 - total2012) * 100.0 / total2012, 2) AS increase_pct\n  FROM seg\n  WHERE total2012 > 0\n)\nSELECT Segment, increase_pct\nFROM pct\nWHERE increase_pct = (SELECT MAX(increase_pct) FROM pct)\n   OR increase_pct = (SELECT MIN(increase_pct) FROM pct)\nORDER BY increase_pct DESC",
+    "feedback": {
+      "status": "ok",
+      "columns": [
+        "Segment",
+        "increase_pct"
+      ],
+      "preview_rows": [
+        [
+          "SME",
+          734.71
+        ],
+        [
+          "LAM",
+          539.83
+        ]
+      ],
+      "preview_row_count": 2,
+      "has_more": false,
+      "truncated": false,
+      "output_type_profile": {
+        "columns": [
+          {
+            "index": 0,
+            "name": "Segment",
+            "storage_classes": {
+              "text": 2
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 2
+          },
+          {
+            "index": 1,
+            "name": "increase_pct",
+            "storage_classes": {
+              "real": 2
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 0
+          }
+        ],
+        "sampled_rows": 2,
+        "total_columns": 2,
+        "complete": true
+      },
+      "output_type_check": {
+        "status": "mismatch",
+        "automatic_conversion": false,
+        "columns": [
+          {
+            "index": 0,
+            "expected": "unknown",
+            "protected_identifier": false,
+            "reason": "customers.segment: unknown",
+            "sources": [
+              {
+                "table": "customers",
+                "column": "segment",
+                "declared_type": "TEXT"
+              }
+            ],
+            "unsafe_identifier_cast": false,
+            "name": "Segment",
+            "storage_classes": {
+              "text": 2
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 2,
+            "status": "unverified",
+            "contract_conflict": false
+          },
+          {
+            "index": 1,
+            "expected": "text",
+            "protected_identifier": true,
+            "reason": "Identifier/code lineage; preserve its representation",
+            "sources": [
+              {
+                "table": "yearmonth",
+                "column": "date",
+                "declared_type": "TEXT"
+              },
+              {
+                "table": "yearmonth",
+                "column": "consumption",
+                "declared_type": "REAL"
+              },
+              {
+                "table": "yearmonth",
+                "column": "date",
+                "declared_type": "TEXT"
+              },
+              {
+                "table": "yearmonth",
+                "column": "consumption",
+                "declared_type": "REAL"
+              }
+            ],
+            "unsafe_identifier_cast": false,
+            "name": "increase_pct",
+            "storage_classes": {
+              "real": 2
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 0,
+            "status": "mismatch",
+            "contract_conflict": false
+          }
+        ],
+        "scope": "complete",
+        "sampled_rows": 2,
+        "guidance": "Correct the final SELECT projection, not only predicates. Preserve text identifiers, postal codes, phones and leading zeroes. Do not cast malformed numbers to zero or truncate decimals; do not alter NULLs or coerce all numeric-looking text."
+      }
+    },
+    "schema": {
+      "customers": {
+        "columns": {
+          "CustomerID": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "identification of the customer",
+            "documented_examples": "[3, 5]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "3",
+              "5"
+            ],
+            "samples_incomplete": true
+          },
+          "Segment": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "client segment",
+            "documented_examples": "['SME', 'LAM']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "SME",
+              "LAM"
+            ],
+            "samples_incomplete": true
+          },
+          "Currency": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "Currency",
+            "documented_examples": "['EUR']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "EUR"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": []
+      },
+      "gasstations": {
+        "columns": {
+          "GasStationID": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "Gas Station ID",
+            "documented_examples": "[44, 45]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "44",
+              "45"
+            ],
+            "samples_incomplete": true
+          },
+          "ChainID": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "Chain ID",
+            "documented_examples": "[13, 6]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "13",
+              "6"
+            ],
+            "samples_incomplete": true
+          },
+          "Country": {
+            "type": "TEXT",
+            "pk": false,
+            "documented_examples": "['CZE']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "CZE"
+            ],
+            "samples_incomplete": true
+          },
+          "Segment": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "chain segment",
+            "documented_examples": "['Value for money', 'Premium']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "Value for money",
+              "Premium"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": []
+      },
+      "products": {
+        "columns": {
+          "ProductID": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "Product ID",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "Description": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "Description",
+            "documented_examples": "['Rucní zadání', 'Nafta']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "Rucní zadání",
+              "Nafta"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": []
+      },
+      "transactions_1k": {
+        "columns": {
+          "TransactionID": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "Transaction ID",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "Date": {
+            "type": "DATE",
+            "pk": false,
+            "description": "Date",
+            "documented_examples": "['2012-08-24']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "2012-08-24"
+            ],
+            "samples_incomplete": true
+          },
+          "Time": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "Time",
+            "documented_examples": "['09:41:00', '10:03:00']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "09:41:00",
+              "10:03:00"
+            ],
+            "samples_incomplete": true
+          },
+          "CustomerID": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "Customer ID",
+            "documented_examples": "[31543, 46707]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "31543",
+              "46707"
+            ],
+            "samples_incomplete": true
+          },
+          "CardID": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "Card ID",
+            "documented_examples": "[486621, 550134]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "486621",
+              "550134"
+            ],
+            "samples_incomplete": true
+          },
+          "GasStationID": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "Gas Station ID",
+            "documented_examples": "[3704, 656]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "3704",
+              "656"
+            ],
+            "samples_incomplete": true
+          },
+          "ProductID": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "Product ID",
+            "documented_examples": "[2, 23]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "2",
+              "23"
+            ],
+            "samples_incomplete": true
+          },
+          "Amount": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "Amount",
+            "documented_examples": "[28, 18]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "28",
+              "18"
+            ],
+            "samples_incomplete": true
+          },
+          "Price": {
+            "type": "REAL",
+            "pk": false,
+            "description": "Price",
+            "documented_examples": "[672.64, 430.72]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "672.64",
+              "430.72"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": []
+      },
+      "yearmonth": {
+        "columns": {
+          "CustomerID": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "Customer ID",
+            "documented_examples": "[5, 6]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "5",
+              "6"
+            ],
+            "samples_incomplete": true
+          },
+          "Date": {
+            "type": "TEXT",
+            "pk": true,
+            "description": "Date",
+            "documented_examples": "['201207', '201302']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "201207",
+              "201302"
+            ],
+            "samples_incomplete": true
+          },
+          "Consumption": {
+            "type": "REAL",
+            "pk": false,
+            "description": "consumption",
+            "documented_examples": "[528.3, 1598.28]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "528.3",
+              "1598.28"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "CustomerID",
+            "table": "customers",
+            "target": null
+          },
+          {
+            "column": "CustomerID",
+            "table": "customers",
+            "target": null
+          }
+        ]
+      }
+    },
+    "source": "output\\issue123-deepseek-diagnostic100-20261111\\q150\\trace.jsonl",
+    "expected": "no_mismatch"
+  },
+  {
+    "question_id": "472",
+    "sql": "SELECT ROUND(\n  100.0 * SUM(CASE WHEN f.molecule_id IS NULL THEN 1 ELSE 0 END) / COUNT(*),\n  2\n) AS percentage\nFROM molecule AS m\nLEFT JOIN (\n  SELECT DISTINCT a.molecule_id\n  FROM atom AS a\n  WHERE a.element = 'f'\n) AS f ON f.molecule_id = m.molecule_id\nWHERE m.label = '+'",
+    "feedback": {
+      "status": "ok",
+      "columns": [
+        "percentage"
+      ],
+      "preview_rows": [
+        [
+          99.34
+        ]
+      ],
+      "preview_row_count": 1,
+      "has_more": false,
+      "truncated": false,
+      "output_type_profile": {
+        "columns": [
+          {
+            "index": 0,
+            "name": "percentage",
+            "storage_classes": {
+              "real": 1
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 0
+          }
+        ],
+        "sampled_rows": 1,
+        "total_columns": 1,
+        "complete": true
+      },
+      "output_type_check": {
+        "status": "mismatch",
+        "automatic_conversion": false,
+        "columns": [
+          {
+            "index": 0,
+            "expected": "text",
+            "protected_identifier": true,
+            "reason": "Identifier/code lineage; preserve its representation",
+            "sources": [
+              {
+                "table": "atom",
+                "column": "molecule_id",
+                "declared_type": "TEXT"
+              }
+            ],
+            "unsafe_identifier_cast": false,
+            "name": "percentage",
+            "storage_classes": {
+              "real": 1
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 0,
+            "status": "mismatch",
+            "contract_conflict": false
+          }
+        ],
+        "scope": "complete",
+        "sampled_rows": 1,
+        "guidance": "Correct the final SELECT projection, not only predicates. Preserve text identifiers, postal codes, phones and leading zeroes. Do not cast malformed numbers to zero or truncate decimals; do not alter NULLs or coerce all numeric-looking text."
+      }
+    },
+    "schema": {
+      "atom": {
+        "columns": {
+          "atom_id": {
+            "type": "TEXT",
+            "pk": true,
+            "description": "the unique id of atoms",
+            "documented_examples": "['TR000_1', 'TR000_2']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "TR000_1",
+              "TR000_2"
+            ],
+            "samples_incomplete": true
+          },
+          "molecule_id": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "identifying the molecule to which the atom belongs",
+            "documented_examples": "['TR000']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "TR000",
+              "TR001"
+            ],
+            "samples_incomplete": true
+          },
+          "element": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "the element of the toxicology",
+            "documented_examples": "['cl', 'c']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "cl",
+              "c"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "molecule_id",
+            "table": "molecule",
+            "target": "molecule_id"
+          }
+        ]
+      },
+      "bond": {
+        "columns": {
+          "bond_id": {
+            "type": "TEXT",
+            "pk": true,
+            "description": "unique id representing bonds",
+            "documented_examples": "['TR000_1_2', 'TR000_2_3']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "TR000_1_2",
+              "TR000_2_3"
+            ],
+            "samples_incomplete": true
+          },
+          "molecule_id": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "identifying the molecule in which the bond appears",
+            "documented_examples": "['TR000', 'TR001']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "TR000",
+              "TR001"
+            ],
+            "samples_incomplete": true
+          },
+          "bond_type": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "type of the bond",
+            "documented_examples": "['-', '=']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "-",
+              "="
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "molecule_id",
+            "table": "molecule",
+            "target": "molecule_id"
+          }
+        ]
+      },
+      "connected": {
+        "columns": {
+          "atom_id": {
+            "type": "TEXT",
+            "pk": true,
+            "description": "id of the first atom",
+            "documented_examples": "['TR000_1', 'TR000_2']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "TR000_1",
+              "TR000_2"
+            ],
+            "samples_incomplete": true
+          },
+          "atom_id2": {
+            "type": "TEXT",
+            "pk": true,
+            "description": "id of the second atom",
+            "documented_examples": "['TR000_2', 'TR000_1']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "TR000_2",
+              "TR000_1"
+            ],
+            "samples_incomplete": true
+          },
+          "bond_id": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "bond id representing bond between two atoms",
+            "documented_examples": "['TR000_1_2', 'TR000_2_3']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "TR000_1_2",
+              "TR000_2_3"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "bond_id",
+            "table": "bond",
+            "target": "bond_id"
+          },
+          {
+            "column": "atom_id2",
+            "table": "atom",
+            "target": "atom_id"
+          },
+          {
+            "column": "atom_id",
+            "table": "atom",
+            "target": "atom_id"
+          }
+        ]
+      },
+      "element": {
+        "columns": {
+          "element_id": {
+            "type": "TEXT",
+            "pk": true,
+            "documented_examples": "[]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [],
+            "samples_incomplete": true
+          },
+          "element_name": {
+            "type": "TEXT",
+            "pk": false,
+            "documented_examples": "[]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": []
+      },
+      "molecule": {
+        "columns": {
+          "molecule_id": {
+            "type": "TEXT",
+            "pk": true,
+            "description": "unique id of molecule",
+            "documented_examples": "['TR000', 'TR001']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "TR000",
+              "TR001"
+            ],
+            "samples_incomplete": true
+          },
+          "label": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "whether this molecule is carcinogenic or not",
+            "documented_examples": "['+', '-']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "+",
+              "-"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": []
+      }
+    },
+    "source": "output\\issue123-deepseek-diagnostic100-part2-20261111\\q472\\trace.jsonl",
+    "expected": "no_mismatch"
+  },
+  {
+    "question_id": "327",
+    "sql": "WITH approved AS (\n  SELECT e.expense_description, e.cost, b.category\n  FROM expense AS e\n  JOIN budget AS b ON b.budget_id = e.link_to_budget\n  JOIN event AS ev ON ev.event_id = b.link_to_event\n  WHERE ev.event_name = 'October Meeting'\n    AND e.approved = 'true'\n),\nitems AS (\n  SELECT TRIM(value) AS item, cost, category\n  FROM approved, json_each('[\"' || REPLACE(expense_description, ', ', '\",\"') || '\"]')\n)\nSELECT item, category, SUM(cost) AS total_cost\nFROM items\nGROUP BY item, category\nORDER BY category, item",
+    "feedback": {
+      "status": "ok",
+      "columns": [
+        "item",
+        "category",
+        "total_cost"
+      ],
+      "preview_rows": [
+        [
+          "Posters",
+          "Advertisement",
+          54.25
+        ],
+        [
+          "Pizza",
+          "Food",
+          51.81
+        ],
+        [
+          "Water",
+          "Food",
+          69.33
+        ],
+        [
+          "chips",
+          "Food",
+          69.33
+        ],
+        [
+          "cookies",
+          "Food",
+          69.33
+        ]
+      ],
+      "preview_row_count": 5,
+      "has_more": false,
+      "truncated": false,
+      "output_type_profile": {
+        "columns": [
+          {
+            "index": 0,
+            "name": "item",
+            "storage_classes": {
+              "text": 5
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 5
+          },
+          {
+            "index": 1,
+            "name": "category",
+            "storage_classes": {
+              "text": 5
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 5
+          },
+          {
+            "index": 2,
+            "name": "total_cost",
+            "storage_classes": {
+              "real": 5
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 0
+          }
+        ],
+        "sampled_rows": 5,
+        "total_columns": 3,
+        "complete": true
+      },
+      "output_type_check": {
+        "status": "mismatch",
+        "automatic_conversion": false,
+        "columns": [
+          {
+            "index": 0,
+            "expected": "unknown",
+            "protected_identifier": false,
+            "reason": ".value: unknown",
+            "sources": [
+              {
+                "table": "",
+                "column": "value",
+                "declared_type": ""
+              }
+            ],
+            "unsafe_identifier_cast": false,
+            "name": "item",
+            "storage_classes": {
+              "text": 5
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 5,
+            "status": "unverified",
+            "contract_conflict": false
+          },
+          {
+            "index": 1,
+            "expected": "number",
+            "protected_identifier": false,
+            "reason": "budget.category: number",
+            "sources": [
+              {
+                "table": "budget",
+                "column": "category",
+                "declared_type": "TEXT"
+              }
+            ],
+            "unsafe_identifier_cast": false,
+            "name": "category",
+            "storage_classes": {
+              "text": 5
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 5,
+            "status": "mismatch",
+            "contract_conflict": false
+          },
+          {
+            "index": 2,
+            "expected": "number",
+            "protected_identifier": false,
+            "reason": "SQL numeric expression",
+            "sources": [
+              {
+                "table": "expense",
+                "column": "cost",
+                "declared_type": "REAL"
+              }
+            ],
+            "unsafe_identifier_cast": false,
+            "name": "total_cost",
+            "storage_classes": {
+              "real": 5
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 0,
+            "status": "ok",
+            "contract_conflict": false
+          }
+        ],
+        "scope": "complete",
+        "sampled_rows": 5,
+        "guidance": "Correct the final SELECT projection, not only predicates. Preserve text identifiers, postal codes, phones and leading zeroes. Do not cast malformed numbers to zero or truncate decimals; do not alter NULLs or coerce all numeric-looking text."
+      }
+    },
+    "schema": {
+      "attendance": {
+        "columns": {
+          "link_to_event": {
+            "type": "TEXT",
+            "pk": true,
+            "description": "The unique identifier of the event which was attended",
+            "documented_examples": "['rec2N69DMcrqN9PJC']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "rec2N69DMcrqN9PJC",
+              "rec5XDvJLyxDsGZWc"
+            ],
+            "samples_incomplete": true
+          },
+          "link_to_member": {
+            "type": "TEXT",
+            "pk": true,
+            "description": "The unique identifier of the member who attended the event",
+            "documented_examples": "['recD078PnS3x2doBe', 'recP6DJPyi5donvXL']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "recD078PnS3x2doBe",
+              "recP6DJPyi5donvXL"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "link_to_member",
+            "table": "member",
+            "target": "member_id"
+          },
+          {
+            "column": "link_to_event",
+            "table": "event",
+            "target": "event_id"
+          }
+        ]
+      },
+      "budget": {
+        "columns": {
+          "budget_id": {
+            "type": "TEXT",
+            "pk": true,
+            "description": "A unique identifier for the budget entry",
+            "documented_examples": "['rec0QmEc3cSQFQ6V2', 'rec1bG6HSft7XIvTP']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "rec0QmEc3cSQFQ6V2",
+              "rec1bG6HSft7XIvTP"
+            ],
+            "samples_incomplete": true
+          },
+          "category": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "The area for which the amount is budgeted, such as, advertisement, food, parking",
+            "documented_examples": "['Advertisement', 'Food']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "Advertisement",
+              "Food"
+            ],
+            "samples_incomplete": true
+          },
+          "spent": {
+            "type": "REAL",
+            "pk": false,
+            "description": "The total amount spent in the budgeted category for an event.",
+            "documented_examples": "[67.81, 121.14]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "67.81",
+              "121.14"
+            ],
+            "samples_incomplete": true
+          },
+          "remaining": {
+            "type": "REAL",
+            "pk": false,
+            "description": "A value calculated as the amount budgeted minus the amount spent",
+            "documented_examples": "[7.19, 28.86]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "7.19",
+              "28.86"
+            ],
+            "samples_incomplete": true
+          },
+          "amount": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "The amount budgeted for the specified category and event",
+            "documented_examples": "[75, 150]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "75",
+              "150"
+            ],
+            "samples_incomplete": true
+          },
+          "event_status": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "the status of the event",
+            "documented_examples": "['Closed', 'Open']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "Closed",
+              "Open"
+            ],
+            "samples_incomplete": true
+          },
+          "link_to_event": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "The unique identifier of the event to which the budget line applies.",
+            "documented_examples": "['recI43CzsZ0Q625ma', 'recggMW2eyCYceNcy']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "recI43CzsZ0Q625ma",
+              "recggMW2eyCYceNcy"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "link_to_event",
+            "table": "event",
+            "target": "event_id"
+          }
+        ]
+      },
+      "event": {
+        "columns": {
+          "event_id": {
+            "type": "TEXT",
+            "pk": true,
+            "description": "A unique identifier for the event",
+            "documented_examples": "['rec0Si5cQ4rJRVzd6', 'rec0akZnLLpGUloLH']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "rec0Si5cQ4rJRVzd6",
+              "rec0akZnLLpGUloLH"
+            ],
+            "samples_incomplete": true
+          },
+          "event_name": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "event name",
+            "documented_examples": "['March Meeting', 'Officers meeting - January']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "March Meeting",
+              "Officers meeting - January"
+            ],
+            "samples_incomplete": true
+          },
+          "event_date": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "The date the event took place or is scheduled to take place",
+            "documented_examples": "['2020-03-10T12:00:00', '2020-01-14T09:30:00']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "2020-03-10T12:00:00",
+              "2020-01-14T09:30:00"
+            ],
+            "samples_incomplete": true
+          },
+          "type": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "The kind of event, such as game, social, election",
+            "documented_examples": "['Meeting', 'Election']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "Meeting",
+              "Election"
+            ],
+            "samples_incomplete": true
+          },
+          "notes": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "A free text field for any notes about the event",
+            "documented_examples": "['All active members can vote for new officers between 4pm-8pm.', \"Attend Women's soccer game as a group.\"]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              null,
+              "All active members can vote for new officers between 4pm-8pm."
+            ],
+            "samples_incomplete": true
+          },
+          "location": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "Address where the event was held or is to be held or the name of such a location",
+            "documented_examples": "['MU 215', 'Campus Soccer/Lacrosse stadium']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "MU 215",
+              null
+            ],
+            "samples_incomplete": true
+          },
+          "status": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "One of three values indicating if the event is in planning, is opened, or is closed",
+            "documented_examples": "['Open', 'Planning']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "Open",
+              "Planning"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": []
+      },
+      "expense": {
+        "columns": {
+          "expense_id": {
+            "type": "TEXT",
+            "pk": true,
+            "description": "unique id of income",
+            "documented_examples": "['rec017x6R3hQqkLAo', 'rec1nIjoZKTYayqZ6']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "rec017x6R3hQqkLAo",
+              "rec1nIjoZKTYayqZ6"
+            ],
+            "samples_incomplete": true
+          },
+          "expense_description": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "A textual description of what the money was spend for",
+            "documented_examples": "['Post Cards, Posters', 'Water, Cookies']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "Post Cards, Posters",
+              "Water, Cookies"
+            ],
+            "samples_incomplete": true
+          },
+          "expense_date": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "The date the expense was incurred",
+            "documented_examples": "['2019-08-20', '2019-10-08']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "2019-08-20",
+              "2019-10-08"
+            ],
+            "samples_incomplete": true
+          },
+          "cost": {
+            "type": "REAL",
+            "pk": false,
+            "description": "The dollar amount of the expense",
+            "documented_examples": "[122.06, 20.2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "122.06",
+              "20.2"
+            ],
+            "samples_incomplete": true
+          },
+          "approved": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "A true or false value indicating if the expense was approved",
+            "documented_examples": "['true']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "true",
+              null
+            ],
+            "samples_incomplete": true
+          },
+          "link_to_member": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "The member who incurred the expense",
+            "documented_examples": "['rec4BLdZHS2Blfp4v', 'recro8T1MPMwRadVH']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "rec4BLdZHS2Blfp4v",
+              "recro8T1MPMwRadVH"
+            ],
+            "samples_incomplete": true
+          },
+          "link_to_budget": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "The unique identifier of the record in the Budget table that indicates the expected total expenditure for a given catego",
+            "documented_examples": "['recvKTAWAFKkVNnXQ', 'recy8KY5bUdzF81vv']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "recvKTAWAFKkVNnXQ",
+              "recy8KY5bUdzF81vv"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "link_to_member",
+            "table": "member",
+            "target": "member_id"
+          },
+          {
+            "column": "link_to_budget",
+            "table": "budget",
+            "target": "budget_id"
+          }
+        ]
+      },
+      "income": {
+        "columns": {
+          "income_id": {
+            "type": "TEXT",
+            "pk": true,
+            "description": "A unique identifier for each record of income",
+            "documented_examples": "['rec0s9ZrO15zhzUeE', 'rec7f5XMQZexgtQJo']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "rec0s9ZrO15zhzUeE",
+              "rec7f5XMQZexgtQJo"
+            ],
+            "samples_incomplete": true
+          },
+          "date_received": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "the date that the fund received",
+            "documented_examples": "['2019-10-17', '2019-09-04']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "2019-10-17",
+              "2019-09-04"
+            ],
+            "samples_incomplete": true
+          },
+          "amount": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "amount of funds",
+            "documented_examples": "[50]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "50",
+              "200"
+            ],
+            "samples_incomplete": true
+          },
+          "source": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "A value indicating where the funds come from such as dues, or the annual university allocation",
+            "documented_examples": "['Dues']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "Dues",
+              "Fundraising"
+            ],
+            "samples_incomplete": true
+          },
+          "notes": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "A free-text value giving any needed details about the receipt of funds",
+            "documented_examples": "[]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              null,
+              "Secured donations to help pay for speaker gifts."
+            ],
+            "samples_incomplete": true
+          },
+          "link_to_member": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "link to member",
+            "documented_examples": "['reccW7q1KkhSKZsea', 'recTjHY5xXhvkCdVT']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "reccW7q1KkhSKZsea",
+              "recTjHY5xXhvkCdVT"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "link_to_member",
+            "table": "member",
+            "target": "member_id"
+          }
+        ]
+      },
+      "major": {
+        "columns": {
+          "major_id": {
+            "type": "TEXT",
+            "pk": true,
+            "description": "A unique identifier for each major",
+            "documented_examples": "['rec06DF6vZ1CyPKpc', 'rec09LedkREyskCNv']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "rec06DF6vZ1CyPKpc",
+              "rec09LedkREyskCNv"
+            ],
+            "samples_incomplete": true
+          },
+          "major_name": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "major name",
+            "documented_examples": "['Outdoor Product Design and Development', 'Agricultural Communication']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "Outdoor Product Design and Development",
+              "Agricultural Communication"
+            ],
+            "samples_incomplete": true
+          },
+          "department": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "The name of the department that offers the major",
+            "documented_examples": "['School of Applied Sciences, Technology and Education', 'Watershed Sciences Department']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "School of Applied Sciences, Technology and Education",
+              "Watershed Sciences Department"
+            ],
+            "samples_incomplete": true
+          },
+          "college": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "The name college that houses the department that offers the major",
+            "documented_examples": "['College of Agriculture and Applied Sciences', 'College of Natural Resources']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "College of Agriculture and Applied Sciences",
+              "College of Natural Resources"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": []
+      },
+      "member": {
+        "columns": {
+          "member_id": {
+            "type": "TEXT",
+            "pk": true,
+            "description": "unique id of member",
+            "documented_examples": "['rec1x5zBFIqoOuPW8', 'rec280Sk7o31iG0Tx']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "rec1x5zBFIqoOuPW8",
+              "rec280Sk7o31iG0Tx"
+            ],
+            "samples_incomplete": true
+          },
+          "first_name": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "member's first name",
+            "documented_examples": "['Angela', 'Grant']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "Angela",
+              "Grant"
+            ],
+            "samples_incomplete": true
+          },
+          "last_name": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "member's last name",
+            "documented_examples": "['Sanders', 'Gilmour']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "Sanders",
+              "Gilmour"
+            ],
+            "samples_incomplete": true
+          },
+          "email": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "member's email",
+            "documented_examples": "['angela.sanders@lpu.edu', 'grant.gilmour@lpu.edu']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "angela.sanders@lpu.edu",
+              "grant.gilmour@lpu.edu"
+            ],
+            "samples_incomplete": true
+          },
+          "position": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "The position the member holds in the club",
+            "documented_examples": "['Member', 'Inactive']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "Member",
+              "Inactive"
+            ],
+            "samples_incomplete": true
+          },
+          "t_shirt_size": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "The size of tee shirt that member wants when shirts are ordered",
+            "documented_examples": "['Medium', 'X-Large']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "Medium",
+              "X-Large"
+            ],
+            "samples_incomplete": true
+          },
+          "phone": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "The best telephone at which to contact the member",
+            "documented_examples": "['(651) 928-4507', '403-555-1310']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "(651) 928-4507",
+              "403-555-1310"
+            ],
+            "samples_incomplete": true
+          },
+          "zip": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the zip code of the member's hometown",
+            "documented_examples": "[55108, 29440]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "55108",
+              "29440"
+            ],
+            "samples_incomplete": true
+          },
+          "link_to_major": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "The unique identifier of the major of the member. References the Major table",
+            "documented_examples": "['recxK3MHQFbR9J5uO', 'rec7BxKpjJ7bNph3O']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "recxK3MHQFbR9J5uO",
+              "rec7BxKpjJ7bNph3O"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "zip",
+            "table": "zip_code",
+            "target": "zip_code"
+          },
+          {
+            "column": "link_to_major",
+            "table": "major",
+            "target": "major_id"
+          }
+        ]
+      },
+      "zip_code": {
+        "columns": {
+          "zip_code": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "The ZIP code itself. A five-digit number identifying a US post office.",
+            "documented_examples": "[501, 544]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "501",
+              "544"
+            ],
+            "samples_incomplete": true
+          },
+          "type": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "The kind of ZIP code",
+            "documented_examples": "['Unique', 'Standard']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "Unique",
+              "Standard"
+            ],
+            "samples_incomplete": true
+          },
+          "city": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "The city to which the ZIP pertains",
+            "documented_examples": "['Holtsville', 'Adjuntas']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "Holtsville",
+              "Adjuntas"
+            ],
+            "samples_incomplete": true
+          },
+          "county": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "The county to which the ZIP pertains",
+            "documented_examples": "['Suffolk County', 'Adjuntas Municipio']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "Suffolk County",
+              "Adjuntas Municipio"
+            ],
+            "samples_incomplete": true
+          },
+          "state": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "The name of the state to which the ZIP pertains",
+            "documented_examples": "['New York', 'Puerto Rico']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "New York",
+              "Puerto Rico"
+            ],
+            "samples_incomplete": true
+          },
+          "short_state": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "The abbreviation of the state to which the ZIP pertains",
+            "documented_examples": "['NY', 'PR']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "NY",
+              "PR"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": []
+      }
+    },
+    "source": "output\\issue123-deepseek-diagnostic100-part2-20261111\\q327\\trace.jsonl",
+    "expected": "no_mismatch"
+  },
+  {
+    "question_id": "203",
+    "sql": "SELECT d.A2 AS district_name, d.A4 AS inhabitants\nFROM district AS d\nWHERE d.district_id IN (\n    SELECT DISTINCT a.district_id\n    FROM account AS a\n    WHERE strftime('%Y-%m', a.date) = (SELECT strftime('%Y-%m', MIN(date)) FROM account)\n)\nAND CAST(d.A4 AS INTEGER) = (\n    SELECT MAX(CAST(d2.A4 AS INTEGER))\n    FROM district AS d2\n    WHERE d2.district_id IN (\n        SELECT DISTINCT a.district_id\n        FROM account AS a\n        WHERE strftime('%Y-%m', a.date) = (SELECT strftime('%Y-%m', MIN(date)) FROM account)\n    )\n)",
+    "feedback": {
+      "status": "ok",
+      "columns": [
+        "district_name",
+        "inhabitants"
+      ],
+      "preview_rows": [
+        [
+          "Hl.m. Praha",
+          "1204953"
+        ]
+      ],
+      "preview_row_count": 1,
+      "has_more": false,
+      "truncated": false,
+      "output_type_profile": {
+        "columns": [
+          {
+            "index": 0,
+            "name": "district_name",
+            "storage_classes": {
+              "text": 1
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 1
+          },
+          {
+            "index": 1,
+            "name": "inhabitants",
+            "storage_classes": {
+              "text": 1
+            },
+            "numeric_text_count": 1,
+            "other_text_count": 0
+          }
+        ],
+        "sampled_rows": 1,
+        "total_columns": 2,
+        "complete": true
+      },
+      "output_type_check": {
+        "status": "mismatch",
+        "automatic_conversion": false,
+        "columns": [
+          {
+            "index": 0,
+            "expected": "text",
+            "protected_identifier": false,
+            "reason": "district.a2: text",
+            "sources": [
+              {
+                "table": "district",
+                "column": "a2",
+                "declared_type": "TEXT"
+              }
+            ],
+            "unsafe_identifier_cast": false,
+            "name": "district_name",
+            "storage_classes": {
+              "text": 1
+            },
+            "numeric_text_count": 0,
+            "other_text_count": 1,
+            "status": "ok",
+            "contract_conflict": false
+          },
+          {
+            "index": 1,
+            "expected": "integer",
+            "protected_identifier": false,
+            "reason": "district.a4: integer",
+            "sources": [
+              {
+                "table": "district",
+                "column": "a4",
+                "declared_type": "TEXT"
+              }
+            ],
+            "unsafe_identifier_cast": false,
+            "name": "inhabitants",
+            "storage_classes": {
+              "text": 1
+            },
+            "numeric_text_count": 1,
+            "other_text_count": 0,
+            "status": "mismatch",
+            "contract_conflict": false
+          }
+        ],
+        "scope": "complete",
+        "sampled_rows": 1,
+        "guidance": "Correct the final SELECT projection, not only predicates. Preserve text identifiers, postal codes, phones and leading zeroes. Do not cast malformed numbers to zero or truncate decimals; do not alter NULLs or coerce all numeric-looking text."
+      }
+    },
+    "schema": {
+      "account": {
+        "columns": {
+          "account_id": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "the id of the account",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "district_id": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "location of branch",
+            "documented_examples": "[18, 1]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "18",
+              "1"
+            ],
+            "samples_incomplete": true
+          },
+          "frequency": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "frequency of the acount",
+            "documented_examples": "['POPLATEK MESICNE']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "POPLATEK MESICNE",
+              "POPLATEK TYDNE"
+            ],
+            "samples_incomplete": true
+          },
+          "date": {
+            "type": "DATE",
+            "pk": false,
+            "description": "the creation date of the account",
+            "documented_examples": "['1995-03-24', '1993-02-26']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1995-03-24",
+              "1993-02-26"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "district_id",
+            "table": "district",
+            "target": "district_id"
+          }
+        ]
+      },
+      "card": {
+        "columns": {
+          "card_id": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "id number of credit card",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "disp_id": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "disposition id",
+            "documented_examples": "[9, 19]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "9",
+              "19"
+            ],
+            "samples_incomplete": true
+          },
+          "type": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "type of credit card",
+            "documented_examples": "['gold', 'classic']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "gold",
+              "classic"
+            ],
+            "samples_incomplete": true
+          },
+          "issued": {
+            "type": "DATE",
+            "pk": false,
+            "description": "the date when the credit card issued",
+            "documented_examples": "['1998-10-16', '1998-03-13']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1998-10-16",
+              "1998-03-13"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "disp_id",
+            "table": "disp",
+            "target": "disp_id"
+          }
+        ]
+      },
+      "client": {
+        "columns": {
+          "client_id": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "the unique number",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "gender": {
+            "type": "TEXT",
+            "pk": false,
+            "documented_examples": "['F', 'M']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "F",
+              "M"
+            ],
+            "samples_incomplete": true
+          },
+          "birth_date": {
+            "type": "DATE",
+            "pk": false,
+            "description": "birth date",
+            "documented_examples": "['1970-12-13', '1945-02-04']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1970-12-13",
+              "1945-02-04"
+            ],
+            "samples_incomplete": true
+          },
+          "district_id": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "location of branch",
+            "documented_examples": "[18, 1]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "18",
+              "1"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "district_id",
+            "table": "district",
+            "target": "district_id"
+          }
+        ]
+      },
+      "disp": {
+        "columns": {
+          "disp_id": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "unique number of identifying this row of record",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "client_id": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "id number of client",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "account_id": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "id number of account",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "type": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "type of disposition",
+            "documented_examples": "['OWNER', 'DISPONENT']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "OWNER",
+              "DISPONENT"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "client_id",
+            "table": "client",
+            "target": "client_id"
+          },
+          {
+            "column": "account_id",
+            "table": "account",
+            "target": "account_id"
+          }
+        ]
+      },
+      "district": {
+        "columns": {
+          "district_id": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "location of branch",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "A2": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "district_name",
+            "documented_examples": "['Hl.m. Praha', 'Benesov']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "Hl.m. Praha",
+              "Benesov"
+            ],
+            "samples_incomplete": true
+          },
+          "A3": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "region",
+            "documented_examples": "['Prague', 'central Bohemia']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "Prague",
+              "central Bohemia"
+            ],
+            "samples_incomplete": true
+          },
+          "A4": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "number of inhabitants",
+            "documented_examples": "['1204953', '88884']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1204953",
+              "88884"
+            ],
+            "samples_incomplete": true
+          },
+          "A5": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "municipality < district < region",
+            "documented_examples": "['0', '80']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "0",
+              "80"
+            ],
+            "samples_incomplete": true
+          },
+          "A6": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "municipality < district < region",
+            "documented_examples": "['0', '26']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "0",
+              "26"
+            ],
+            "samples_incomplete": true
+          },
+          "A7": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "municipality < district < region",
+            "documented_examples": "['0', '6']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "0",
+              "6"
+            ],
+            "samples_incomplete": true
+          },
+          "A8": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "municipality < district < region",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "A9": {
+            "type": "INTEGER",
+            "pk": false,
+            "documented_examples": "[1, 5]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "5"
+            ],
+            "samples_incomplete": true
+          },
+          "A10": {
+            "type": "REAL",
+            "pk": false,
+            "description": "ratio of urban inhabitants",
+            "documented_examples": "[100.0, 46.7]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "100.0",
+              "46.7"
+            ],
+            "samples_incomplete": true
+          },
+          "A11": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "average salary",
+            "documented_examples": "[12541, 8507]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "12541",
+              "8507"
+            ],
+            "samples_incomplete": true
+          },
+          "A12": {
+            "type": "REAL",
+            "pk": false,
+            "description": "unemployment rate 1995",
+            "documented_examples": "[0.2, 1.6]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "0.2",
+              "1.6"
+            ],
+            "samples_incomplete": true
+          },
+          "A13": {
+            "type": "REAL",
+            "pk": false,
+            "description": "unemployment rate 1996",
+            "documented_examples": "[0.43, 1.85]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "0.43",
+              "1.85"
+            ],
+            "samples_incomplete": true
+          },
+          "A14": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "no. of entrepreneurs per 1000 inhabitants",
+            "documented_examples": "[167, 132]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "167",
+              "132"
+            ],
+            "samples_incomplete": true
+          },
+          "A15": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "no. of committed crimes 1995",
+            "documented_examples": "[85677, 2159]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "85677",
+              "2159"
+            ],
+            "samples_incomplete": true
+          },
+          "A16": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "no. of committed crimes 1996",
+            "documented_examples": "[99107, 2674]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "99107",
+              "2674"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": []
+      },
+      "loan": {
+        "columns": {
+          "loan_id": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "the id number identifying the loan data",
+            "documented_examples": "[4959, 4961]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "4959",
+              "4961"
+            ],
+            "samples_incomplete": true
+          },
+          "account_id": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the id number identifying the account",
+            "documented_examples": "[2, 19]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "2",
+              "19"
+            ],
+            "samples_incomplete": true
+          },
+          "date": {
+            "type": "DATE",
+            "pk": false,
+            "description": "the date when the loan is approved",
+            "documented_examples": "['1994-01-05', '1996-04-29']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1994-01-05",
+              "1996-04-29"
+            ],
+            "samples_incomplete": true
+          },
+          "amount": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "approved amount",
+            "documented_examples": "[80952, 30276]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "80952",
+              "30276"
+            ],
+            "samples_incomplete": true
+          },
+          "duration": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "loan duration",
+            "documented_examples": "[24, 12]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "24",
+              "12"
+            ],
+            "samples_incomplete": true
+          },
+          "payments": {
+            "type": "REAL",
+            "pk": false,
+            "description": "monthly payments",
+            "documented_examples": "[3373.0, 2523.0]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "3373.0",
+              "2523.0"
+            ],
+            "samples_incomplete": true
+          },
+          "status": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "repayment status",
+            "documented_examples": "['A', 'B']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "A",
+              "B"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "account_id",
+            "table": "account",
+            "target": "account_id"
+          }
+        ]
+      },
+      "order": {
+        "columns": {
+          "order_id": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "identifying the unique order",
+            "documented_examples": "[29401, 29402]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "29401",
+              "29402"
+            ],
+            "samples_incomplete": true
+          },
+          "account_id": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "id number of account",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "bank_to": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "bank of the recipient",
+            "documented_examples": "['YZ', 'ST']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "YZ",
+              "ST"
+            ],
+            "samples_incomplete": true
+          },
+          "account_to": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "account of the recipient",
+            "documented_examples": "[87144583, 89597016]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "87144583",
+              "89597016"
+            ],
+            "samples_incomplete": true
+          },
+          "amount": {
+            "type": "REAL",
+            "pk": false,
+            "description": "debited amount",
+            "documented_examples": "[2452.0, 3372.7]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "2452.0",
+              "3372.7"
+            ],
+            "samples_incomplete": true
+          },
+          "k_symbol": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "purpose of the payment",
+            "documented_examples": "['SIPO', 'UVER']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "SIPO",
+              "UVER"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "account_id",
+            "table": "account",
+            "target": "account_id"
+          }
+        ]
+      },
+      "trans": {
+        "columns": {
+          "trans_id": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "transaction id",
+            "documented_examples": "[1, 5]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "5"
+            ],
+            "samples_incomplete": true
+          },
+          "account_id": {
+            "type": "INTEGER",
+            "pk": false,
+            "documented_examples": "[1]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1"
+            ],
+            "samples_incomplete": true
+          },
+          "date": {
+            "type": "DATE",
+            "pk": false,
+            "description": "date of transaction",
+            "documented_examples": "['1995-03-24', '1995-04-13']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1995-03-24",
+              "1995-04-13"
+            ],
+            "samples_incomplete": true
+          },
+          "type": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "+/- transaction",
+            "documented_examples": "['PRIJEM']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "PRIJEM"
+            ],
+            "samples_incomplete": true
+          },
+          "operation": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "mode of transaction",
+            "documented_examples": "['VKLAD', 'PREVOD Z UCTU']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "VKLAD",
+              "PREVOD Z UCTU"
+            ],
+            "samples_incomplete": true
+          },
+          "amount": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "amount of money",
+            "documented_examples": "[1000, 3679]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1000",
+              "3679"
+            ],
+            "samples_incomplete": true
+          },
+          "balance": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "balance after transaction",
+            "documented_examples": "[1000, 4679]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1000",
+              "4679"
+            ],
+            "samples_incomplete": true
+          },
+          "k_symbol": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "characterization of the transaction",
+            "documented_examples": "[]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              null
+            ],
+            "samples_incomplete": true
+          },
+          "bank": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "bank of the partner",
+            "documented_examples": "['AB']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              null,
+              "AB"
+            ],
+            "samples_incomplete": true
+          },
+          "account": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "account of the partner",
+            "documented_examples": "[41403269]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              null,
+              "41403269"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "account_id",
+            "table": "account",
+            "target": "account_id"
+          }
+        ]
+      }
+    },
+    "source": "output\\issue123-deepseek-diagnostic100-20261111\\q203\\trace.jsonl",
+    "expected": "mismatch"
+  }
+]

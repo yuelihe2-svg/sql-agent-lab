@@ -1,0 +1,172 @@
+[
+  {
+    "question": {
+      "question_id": "118",
+      "db_id": "codebase_community",
+      "question": "What is the display name of the user who last edited the post \"Examples for teaching: Correlation does not mean causation\"?",
+      "evidence": ""
+    },
+    "before": "SELECT u.DisplayName\nFROM posts AS p\nJOIN users AS u ON u.Id = p.LastEditorUserId\nWHERE p.Title = 'Examples for teaching: Correlation does not mean causation'",
+    "raw": "{\"action\":\"accept\",\"requirements\":[{\"id\":\"r1\",\"source\":\"question\",\"quote\":\"What is the display name of the user\",\"check\":\"output\",\"status\":\"pass\",\"sql_fragment\":\"SELECT u.DisplayName\",\"reason\":\"Selects user display name\"},{\"id\":\"r2\",\"source\":\"question\",\"quote\":\"who last edited the post\",\"check\":\"joins\",\"status\":\"pass\",\"sql_fragment\":\"JOIN users AS u ON u.Id = p.LastEditorUserId\",\"reason\":\"Joins last editor user\"},{\"id\":\"r3\",\"source\":\"question\",\"quote\":\"the post \\\"Examples for teaching: Correlation does not mean causation\\\"\",\"check\":\"filters\",\"status\":\"pass\",\"sql_fragment\":\"WHERE p.Title = 'Examples for teaching: Correlation does not mean causation'\",\"reason\":\"Filters by exact title\"}],\"checks\":{\"output\":{\"status\":\"pass\",\"reason\":\"DisplayName selected\"},\"filters\":{\"status\":\"pass\",\"reason\":\"Title filter matches\"},\"joins\":{\"status\":\"pass\",\"reason\":\"LastEditorUserId join correct\"},\"aggregation\":{\"status\":\"pass\",\"reason\":\"not required\"},\"ordering\":{\"status\":\"pass\",\"reason\":\"not required\"},\"limit\":{\"status\":\"pass\",\"reason\":\"not required\"}},\"changes\":[]}",
+    "sources": {
+      "d1": "the badge id",
+      "d2": "the comment Id",
+      "d3": "the post history id",
+      "d4": "the post link id",
+      "d5": "the post id",
+      "d6": "the title of the post",
+      "d7": "the id of the last editor",
+      "d8": "the tag id",
+      "d9": "the user id",
+      "d10": "the user's display name",
+      "d11": "the vote id"
+    },
+    "original_error": null,
+    "provenance": {
+      "trace": "D:\\Study\\project\\agentopt-research\\output\\issue123-deepseek-flash-core6-20261110\\q118\\trace.jsonl",
+      "sha256": "1dab53e12d758ed90a5329f4fc3ec1fc4d2383ea6d980ca78d992f2251e4f311",
+      "call_id": "ce5a52cd0bad4b4d9784f373f7261aa0"
+    }
+  },
+  {
+    "question": {
+      "question_id": "165",
+      "db_id": "european_football_2",
+      "question": "List the ten players taller than 180 cm with the highest mean recorded heading accuracy, highest first. Break mean ties by player API ID.",
+      "evidence": ""
+    },
+    "before": "SELECT p.player_name, p.player_api_id, AVG(pa.heading_accuracy) AS mean_heading\nFROM Player AS p\nJOIN Player_Attributes AS pa ON pa.player_api_id = p.player_api_id\nWHERE p.height > 180\nGROUP BY p.player_api_id\nORDER BY mean_heading DESC, p.player_api_id ASC\nLIMIT 10",
+    "raw": "{\"action\":\"accept\",\"requirements\":[{\"id\":\"r1\",\"source\":\"question\",\"quote\":\"List the ten players\",\"check\":\"limit\",\"status\":\"pass\",\"sql_fragment\":\"LIMIT 10\",\"reason\":\"limits to ten rows\"},{\"id\":\"r2\",\"source\":\"question\",\"quote\":\"taller than 180 cm\",\"check\":\"filters\",\"status\":\"pass\",\"sql_fragment\":\"WHERE p.height > 180\",\"reason\":\"strict height filter\"},{\"id\":\"r3\",\"source\":\"question\",\"quote\":\"with the highest mean recorded heading accuracy\",\"check\":\"aggregation\",\"status\":\"pass\",\"sql_fragment\":\"AVG(pa.heading_accuracy) AS mean_heading\",\"reason\":\"mean of heading_accuracy per player\"},{\"id\":\"r4\",\"source\":\"question\",\"quote\":\"highest first\",\"check\":\"ordering\",\"status\":\"pass\",\"sql_fragment\":\"ORDER BY mean_heading DESC\",\"reason\":\"descending mean\"},{\"id\":\"r5\",\"source\":\"question\",\"quote\":\"Break mean ties by player API ID\",\"check\":\"ordering\",\"status\":\"pass\",\"sql_fragment\":\"p.player_api_id ASC\",\"reason\":\"tie-break ascending API ID\"},{\"id\":\"r6\",\"source\":\"question\",\"quote\":\"players\",\"check\":\"joins\",\"status\":\"pass\",\"sql_fragment\":\"JOIN Player_Attributes AS pa ON pa.player_api_id = p.player_api_id\",\"reason\":\"player attributes joined per player\"}],\"checks\":{\"output\":{\"status\":\"pass\",\"reason\":\"name, id, mean\"},\"filters\":{\"status\":\"pass\",\"reason\":\"height>180\"},\"joins\":{\"status\":\"pass\",\"reason\":\"player_api_id join\"},\"aggregation\":{\"status\":\"pass\",\"reason\":\"AVG per player\"},\"ordering\":{\"status\":\"pass\",\"reason\":\"mean desc, id asc\"},\"limit\":{\"status\":\"pass\",\"reason\":\"LIMIT 10\"}},\"changes\":[]}",
+    "sources": {
+      "d1": "the id of the player api",
+      "d2": "player name",
+      "d3": "the player's height",
+      "d4": "the id of the player api",
+      "d5": "the player's heading accuracy"
+    },
+    "original_error": null,
+    "provenance": {
+      "trace": "D:\\Study\\project\\agentopt-research\\output\\issue123-deepseek-flash-core6-20261110\\q165\\trace.jsonl",
+      "sha256": "209c663f65aa56b1decfae16a24ecf848506e555a45eccc7f80cf094bb8b04a7",
+      "call_id": "b6d4f6b73ca04919a7a20b38fa7dd342"
+    }
+  },
+  {
+    "question": {
+      "question_id": "129",
+      "db_id": "codebase_community",
+      "question": "I'm profiling how seasoned our Organizer badge holders in Germany are. Among the users who earned the Organizer badge and are based in Germany, how many had already earned 5 badges before they got the Organizer badge? Just the count, please. Note: \"before\" means strictly earlier - badges earned at the same moment as the Organizer badge don't count toward the 5, and the Organizer badge itself doesn't count as one of the 5.",
+      "evidence": "Organizer badge: the badge whose name is Organizer."
+    },
+    "before": "SELECT COUNT(*) AS UserCount\nFROM (\n  SELECT o.UserId, o.OrganizerDate,\n         (SELECT COUNT(*) FROM badges AS b2\n          WHERE b2.UserId = o.UserId\n            AND b2.Date < o.OrganizerDate\n            AND b2.Name <> 'Organizer') AS PriorBadges\n  FROM (SELECT b.UserId, b.Date AS OrganizerDate\n        FROM badges AS b\n        JOIN users AS u ON u.Id = b.UserId\n        WHERE b.Name = 'Organizer' AND u.Location LIKE '%Germany%') AS o\n) AS t\nWHERE t.PriorBadges >= 5",
+    "raw": "{\"action\":\"accept\",\"requirements\":[{\"id\":\"r1\",\"source\":\"question\",\"quote\":\"Among the users who earned the Organizer badge\",\"check\":\"filters\",\"status\":\"pass\",\"sql_fragment\":\"WHERE b.Name = 'Organizer'\",\"reason\":\"filters Organizer badge\"},{\"id\":\"r2\",\"source\":\"evidence\",\"quote\":\"Organizer badge: the badge whose name is Organizer.\",\"check\":\"filters\",\"status\":\"pass\",\"sql_fragment\":\"b.Name = 'Organizer'\",\"reason\":\"matches name\"},{\"id\":\"r3\",\"source\":\"question\",\"quote\":\"and are based in Germany\",\"check\":\"filters\",\"status\":\"pass\",\"sql_fragment\":\"u.Location LIKE '%Germany%'\",\"reason\":\"location filter\"},{\"id\":\"r4\",\"source\":\"question\",\"quote\":\"how many had already earned 5 badges before they got the Organizer badge?\",\"check\":\"aggregation\",\"status\":\"pass\",\"sql_fragment\":\"WHERE t.PriorBadges >= 5\",\"reason\":\"counts users with >=5 prior\"},{\"id\":\"r5\",\"source\":\"question\",\"quote\":\"Just the count, please.\",\"check\":\"output\",\"status\":\"pass\",\"sql_fragment\":\"SELECT COUNT(*) AS UserCount\",\"reason\":\"single count output\"},{\"id\":\"r6\",\"source\":\"question\",\"quote\":\"\\\"before\\\" means strictly earlier\",\"check\":\"filters\",\"status\":\"pass\",\"sql_fragment\":\"b2.Date < o.OrganizerDate\",\"reason\":\"strict less-than\"},{\"id\":\"r7\",\"source\":\"question\",\"quote\":\"badges earned at the same moment as the Organizer badge don't count toward the 5\",\"check\":\"filters\",\"status\":\"pass\",\"sql_fragment\":\"b2.Date < o.OrganizerDate\",\"reason\":\"excludes same moment\"},{\"id\":\"r8\",\"source\":\"question\",\"quote\":\"the Organizer badge itself doesn't count as one of the 5\",\"check\":\"filters\",\"status\":\"pass\",\"sql_fragment\":\"b2.Name <> 'Organizer'\",\"reason\":\"excludes Organizer\"},{\"id\":\"r9\",\"source\":\"question\",\"quote\":\"how many had already earned 5 badges\",\"check\":\"aggregation\",\"status\":\"pass\",\"sql_fragment\":\"COUNT(*) FROM badges AS b2\",\"reason\":\"counts badge rows per user\"}],\"checks\":{\"output\":{\"status\":\"pass\",\"reason\":\"single count\"},\"filters\":{\"status\":\"pass\",\"reason\":\"all filters present\"},\"joins\":{\"status\":\"pass\",\"reason\":\"users join correct\"},\"aggregation\":{\"status\":\"pass\",\"reason\":\"counts users with >=5 prior\"},\"ordering\":{\"status\":\"pass\",\"reason\":\"not required\"},\"limit\":{\"status\":\"pass\",\"reason\":\"not required\"}},\"changes\":[]}",
+    "sources": {
+      "d1": "the badge id",
+      "d2": "the unique id of the user",
+      "d3": "the badge name the user obtained",
+      "d4": "the date that the user obtained the badge",
+      "d5": "the comment Id",
+      "d6": "the id of the user who post the comment",
+      "d7": "the post history id",
+      "d8": "the user who post the post",
+      "d9": "the post link id",
+      "d10": "the post id",
+      "d11": "the tag id",
+      "d12": "the count of posts that contain this tag",
+      "d13": "the user id",
+      "d14": "user's location",
+      "d15": "the vote id",
+      "d16": "the id of the voter"
+    },
+    "original_error": "requirement_coverage_gap",
+    "provenance": {
+      "trace": "D:\\Study\\project\\agentopt-research\\output\\issue123-deepseek-flash-core6-20261110\\q129\\trace.jsonl",
+      "sha256": "68aab4725be7f77fe41cffa145238f9073c884323f88bfe5057f72c34fc97d60",
+      "call_id": "3e2819c9c6f64e4fbc1173a46c63fcaf"
+    }
+  },
+  {
+    "question": {
+      "question_id": "308",
+      "db_id": "student_club",
+      "question": "How many majors offered by the college that offers Tyler Hewitt's major currently have no enrolled members in the club? Count every major that college offers, by major name.",
+      "evidence": "Enrolled members are the people recorded in the club's membership list."
+    },
+    "before": "SELECT COUNT(*)\nFROM major AS m\nWHERE m.college = (\n  SELECT m2.college\n  FROM member AS mem\n  JOIN major AS m2 ON mem.link_to_major = m2.major_id\n  WHERE mem.first_name = 'Tyler' AND mem.last_name = 'Hewitt'\n)\nAND m.major_id NOT IN (\n  SELECT mem.link_to_major\n  FROM member AS mem\n  WHERE mem.link_to_major IS NOT NULL\n)",
+    "raw": "{\"action\":\"accept\",\"requirements\":[{\"id\":\"r1\",\"source\":\"question\",\"quote\":\"How many majors offered by the college that offers Tyler Hewitt's major\",\"check\":\"filters\",\"status\":\"pass\",\"sql_fragment\":\"m.college = (SELECT m2.college FROM member AS mem JOIN major AS m2 ON mem.link_to_major = m2.major_id WHERE mem.first_name = 'Tyler' AND mem.last_name = 'Hewitt')\",\"reason\":\"Restricts to Tyler Hewitt's college via his major\"},{\"id\":\"r2\",\"source\":\"question\",\"quote\":\"currently have no enrolled members in the club\",\"check\":\"filters\",\"status\":\"pass\",\"sql_fragment\":\"m.major_id NOT IN (SELECT mem.link_to_major FROM member AS mem WHERE mem.link_to_major IS NOT NULL)\",\"reason\":\"Excludes majors with enrolled members\"},{\"id\":\"r3\",\"source\":\"question\",\"quote\":\"Count every major that college offers, by major name\",\"check\":\"aggregation\",\"status\":\"pass\",\"sql_fragment\":\"COUNT(*)\",\"reason\":\"Counts majors, one row per major\"},{\"id\":\"r4\",\"source\":\"evidence\",\"quote\":\"Enrolled members are the people recorded in the club's membership list.\",\"check\":\"joins\",\"status\":\"pass\",\"sql_fragment\":\"SELECT mem.link_to_major FROM member AS mem\",\"reason\":\"Membership list = member table\"}],\"checks\":{\"output\":{\"status\":\"pass\",\"reason\":\"Single count output\"},\"filters\":{\"status\":\"pass\",\"reason\":\"College and no-member filters present\"},\"joins\":{\"status\":\"pass\",\"reason\":\"Member-major join for Tyler\"},\"aggregation\":{\"status\":\"pass\",\"reason\":\"Counts majors\"},\"ordering\":{\"status\":\"pass\",\"reason\":\"not required\"},\"limit\":{\"status\":\"pass\",\"reason\":\"not required\"}},\"changes\":[]}",
+    "sources": {
+      "d1": "A unique identifier for each major",
+      "d2": "The name college that houses the department that offers the major",
+      "d3": "member's first name",
+      "d4": "member's last name",
+      "d5": "The unique identifier of the major of the member. References the Major table",
+      "t1": "The exact standalone NOT IN subquery returned no NULL during this completed probe; this is not a proof of the overall query semantics."
+    },
+    "original_error": null,
+    "provenance": {
+      "trace": "D:\\Study\\project\\agentopt-research\\output\\issue123-deepseek-flash-core6-20261110\\q308\\trace.jsonl",
+      "sha256": "39ea27680d62072b1ffc7b7683c553be3e22521edbbdfdc2a11fb4298fbc6e8c",
+      "call_id": "13c6afafe51c4d44a41ff63d29e672b1"
+    }
+  },
+  {
+    "question": {
+      "question_id": "333",
+      "db_id": "superhero",
+      "question": "List the superheroes from Marvel Comics who have the super power of 'Super Strength'.",
+      "evidence": ""
+    },
+    "before": "SELECT s.superhero_name\nFROM superhero AS s\nJOIN publisher AS p ON p.id = s.publisher_id\nJOIN hero_power AS hp ON hp.hero_id = s.id\nJOIN superpower AS sp ON sp.id = hp.power_id\nWHERE p.publisher_name = 'Marvel Comics'\n  AND sp.power_name = 'Super Strength'",
+    "raw": "{\"action\":\"accept\",\"requirements\":[{\"id\":\"r1\",\"source\":\"question\",\"quote\":\"List the superheroes\",\"check\":\"output\",\"status\":\"pass\",\"sql_fragment\":\"SELECT s.superhero_name\",\"reason\":\"Lists hero names\"},{\"id\":\"r2\",\"source\":\"question\",\"quote\":\"from Marvel Comics\",\"check\":\"filters\",\"status\":\"pass\",\"sql_fragment\":\"p.publisher_name = 'Marvel Comics'\",\"reason\":\"Filters publisher\"},{\"id\":\"r3\",\"source\":\"question\",\"quote\":\"who have the super power of 'Super Strength'\",\"check\":\"filters\",\"status\":\"pass\",\"sql_fragment\":\"sp.power_name = 'Super Strength'\",\"reason\":\"Filters power\"},{\"id\":\"r4\",\"source\":\"evidence\",\"quote\":\"the id of the hero Maps to superhero(id)\",\"check\":\"joins\",\"status\":\"pass\",\"sql_fragment\":\"JOIN hero_power AS hp ON hp.hero_id = s.id\",\"reason\":\"Correct hero join\"},{\"id\":\"r5\",\"source\":\"evidence\",\"quote\":\"the id of the power Maps to superpower(id)\",\"check\":\"joins\",\"status\":\"pass\",\"sql_fragment\":\"JOIN superpower AS sp ON sp.id = hp.power_id\",\"reason\":\"Correct power join\"},{\"id\":\"r6\",\"source\":\"evidence\",\"quote\":\"the id of the publisher\",\"check\":\"joins\",\"status\":\"pass\",\"sql_fragment\":\"JOIN publisher AS p ON p.id = s.publisher_id\",\"reason\":\"Correct publisher join\"}],\"checks\":{\"output\":{\"status\":\"pass\",\"reason\":\"Hero names listed\"},\"filters\":{\"status\":\"pass\",\"reason\":\"Both filters present\"},\"joins\":{\"status\":\"pass\",\"reason\":\"Joins match FKs\"},\"aggregation\":{\"status\":\"pass\",\"reason\":\"not required\"},\"ordering\":{\"status\":\"pass\",\"reason\":\"not required\"},\"limit\":{\"status\":\"pass\",\"reason\":\"not required\"}},\"changes\":[]}",
+    "sources": {
+      "d1": "the unique identifier of the alignment",
+      "d2": "the unique identifier of the attribute",
+      "d3": "the unique identifier of the color",
+      "d4": "the unique identifier of the gender",
+      "d5": "the id of the hero Maps to superhero(id)",
+      "d6": "the id of the hero Maps to superhero(id)",
+      "d7": "the id of the power Maps to superpower(id)",
+      "d8": "the unique identifier of the publisher",
+      "d9": "the name of the publisher",
+      "d10": "the unique identifier of the race",
+      "d11": "the unique identifier of the superhero",
+      "d12": "the name of the superhero",
+      "d13": "the id of the publisher",
+      "d14": "the unique identifier of the superpower",
+      "d15": "the superpower name"
+    },
+    "original_error": "ungrounded_requirement",
+    "provenance": {
+      "trace": "D:\\Study\\project\\agentopt-research\\output\\issue123-deepseek-flash-core6-20261110\\q333\\trace.jsonl",
+      "sha256": "ffa8774a88ea45c6b0865a1ce30bc3dcea4da9dc305136e58a9bae11680070d4",
+      "call_id": "1d722e78f6be4152bc35b4e10bda44b4"
+    }
+  },
+  {
+    "question": {
+      "question_id": "203",
+      "db_id": "financial",
+      "question": "We're reviewing our first month of operations. Looking at the districts where we opened at least one account during that first month, which district had the largest population, and how many inhabitants does it have? If several districts tie for the largest population, list all of them with their populations.",
+      "evidence": "The bank's first month of operation is the calendar month in which its earliest account was opened."
+    },
+    "before": "SELECT d.A2, CAST(d.A4 AS INTEGER) AS A4\nFROM district AS d\nWHERE d.district_id IN (\n    SELECT a.district_id\n    FROM account AS a\n    WHERE a.date >= (SELECT MIN(date) FROM account)\n      AND a.date < date((SELECT MIN(date) FROM account), 'start of month', '+1 month')\n)\nAND CAST(d.A4 AS INTEGER) = (\n    SELECT MAX(CAST(d2.A4 AS INTEGER))\n    FROM district AS d2\n    WHERE d2.district_id IN (\n        SELECT a.district_id\n        FROM account AS a\n        WHERE a.date >= (SELECT MIN(date) FROM account)\n          AND a.date < date((SELECT MIN(date) FROM account), 'start of month', '+1 month')\n    )\n)",
+    "raw": "{\"action\":\"accept\",\"requirements\":[{\"id\":\"r1\",\"source\":\"question\",\"quote\":\"Looking at the districts where we opened at least one account during that first month\",\"check\":\"filters\",\"status\":\"pass\",\"sql_fragment\":\"d.district_id IN (SELECT a.district_id FROM account AS a WHERE a.date >= (SELECT MIN(date) FROM account) AND a.date < date((SELECT MIN(date) FROM account), 'start of month', '+1 month'))\",\"reason\":\"Districts with accounts in first month\"},{\"id\":\"r2\",\"source\":\"evidence\",\"quote\":\"The bank's first month of operation is the calendar month in which its earliest account was opened.\",\"check\":\"filters\",\"status\":\"pass\",\"sql_fragment\":\"a.date >= (SELECT MIN(date) FROM account) AND a.date < date((SELECT MIN(date) FROM account), 'start of month', '+1 month')\",\"reason\":\"Calendar month of earliest account\"},{\"id\":\"r3\",\"source\":\"question\",\"quote\":\"which district had the largest population\",\"check\":\"aggregation\",\"status\":\"pass\",\"sql_fragment\":\"CAST(d.A4 AS INTEGER) = (SELECT MAX(CAST(d2.A4 AS INTEGER)) ...)\",\"reason\":\"Filters to max population\"},{\"id\":\"r4\",\"source\":\"question\",\"quote\":\"how many inhabitants does it have\",\"check\":\"output\",\"status\":\"pass\",\"sql_fragment\":\"CAST(d.A4 AS INTEGER) AS A4\",\"reason\":\"Population output\"},{\"id\":\"r5\",\"source\":\"question\",\"quote\":\"which district\",\"check\":\"output\",\"status\":\"pass\",\"sql_fragment\":\"d.A2\",\"reason\":\"District name output\"},{\"id\":\"r6\",\"source\":\"question\",\"quote\":\"If several districts tie for the largest population, list all of them with their populations.\",\"check\":\"ordering\",\"status\":\"pass\",\"sql_fragment\":\"CAST(d.A4 AS INTEGER) = (SELECT MAX(...))\",\"reason\":\"Equality keeps all ties\"}],\"checks\":{\"output\":{\"status\":\"pass\",\"reason\":\"District and population\"},\"filters\":{\"status\":\"pass\",\"reason\":\"First-month districts\"},\"joins\":{\"status\":\"pass\",\"reason\":\"not required\"},\"aggregation\":{\"status\":\"pass\",\"reason\":\"Max population filter\"},\"ordering\":{\"status\":\"pass\",\"reason\":\"Ties preserved\"},\"limit\":{\"status\":\"pass\",\"reason\":\"not required\"}},\"changes\":[]}",
+    "sources": {
+      "d1": "location of branch",
+      "d2": "the creation date of the account",
+      "d3": "location of branch",
+      "d4": "location of branch",
+      "d5": "district_name",
+      "d6": "number of inhabitants",
+      "d7": "the date when the loan is approved",
+      "d8": "date of transaction",
+      "d9": "account of the partner"
+    },
+    "original_error": "unmatched_sql_anchor",
+    "provenance": {
+      "trace": "D:\\Study\\project\\agentopt-research\\output\\issue123-deepseek-flash-core6-20261110\\q203\\trace.jsonl",
+      "sha256": "194bf0af37234a70dc72145128dc0dd7080f08a9757c798fab3e0e2b39588b6c",
+      "call_id": "418fbb6acbd142f0981bb0e93e746f88"
+    }
+  }
+]

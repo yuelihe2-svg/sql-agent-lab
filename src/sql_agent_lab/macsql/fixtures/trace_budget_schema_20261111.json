@@ -1,0 +1,1098 @@
+{
+  "40": {
+    "source": "output\\issue123-deepseek-diagnostic100-20261111\\q40",
+    "question": {
+      "question_id": "40",
+      "db_id": "california_schools",
+      "question": "I'm studying how concentrated economic need relates to SAT outcomes in California public schools. Among regular, non-charter schools with more than 100 K-12 students, I'd like two extremes plus one benchmark school: the school with the largest count of FRPM-eligible students, the school with the smallest FRPM share (the proportion of its K-12 enrollment that is FRPM-eligible – smallest by that share, not the raw count), and the school with CDS code 4615150435602 from my notes. If a school answers more than one part, report it once per part, and label each row with which part it answers ('largest FRPM-eligible count', 'smallest FRPM share', or 'the CDS code from my notes', in that order). Include ties. For each school, please give: school name, county, city, full mailing address as four columns (mailing street, mailing city, mailing state, mailing ZIP), website, K-12 enrollment, FRPM-eligible student count, FRPM share, average total SAT score (reading + math + writing) among its SAT takers, percentage of its SAT takers scoring 1500 or more, opening date, and status ('closed' if a closing date is recorded, otherwise 'open'). Nothing else, please.",
+      "evidence": "CDS code: the California Department of Education's identification code for a school; the benchmark school in my notes is identified by CDS code 4615150435602."
+    },
+    "failure": {
+      "event": "call_failed",
+      "run_id": "q40",
+      "question_id": "40",
+      "models": {
+        "selector": "deepseek-flash",
+        "decomposer": "deepseek-flash",
+        "refiner": "deepseek-flash"
+      },
+      "call_id": "7d763c6acc8c4468bc3f98bd467a77e4",
+      "role": "decomposer",
+      "error_type": "APIRunError",
+      "error": "DeepSeek request failed: output_truncated",
+      "code": "output_truncated",
+      "purpose": "generation_or_repair",
+      "response": "Sub question 1: Which schools are regular, non-charter, with more than 100 K-12 students, and their FRPM count/share?\nSQL 1:\n```sql\nSELECT f.CDSCode, f.\"School Name\", f.\"Enrollment (K-12)\", f.\"FRPM Count (K-12)\",\n       f.\"Percent (%) Eligible FRPM (K-12)\"\nFROM frpm AS f\nJOIN schools AS s ON s.CDSCode = f.CDSCode\nWHERE (s.Charter IS NULL OR s.Charter = 0)\n  AND f.\"Enrollment (K-12)\" > 100\n```\n\nSub question 2: Which school has the largest FRPM-eligible count (with ties)?\nSQL 2:\n```sql\nSELECT f.CDSCode\nFROM frpm AS f\nJOIN schools AS s ON s.CDSCode = f.CDSCode\nWHERE (s.Charter IS NULL OR s.Charter = 0)\n  AND f.\"Enrollment (K-12)\" > 100\n  AND f.\"FRPM Count (K-12)\" = (\n    SELECT MAX(f2.\"FRPM Count (K-12)\")\n    FROM frpm AS f2\n    JOIN schools AS s2 ON s2.CDSCode = f2.CDSCode\n    WHERE (s2.Charter IS NULL OR s2.Charter = 0)\n      AND f2.\"Enrollment (K-12)\" > 100\n  )\n```\n\nSub question 3: Which school has the smallest FRPM share (with ties)?\nSQL 3:\n```sql\nSELECT f.CDSCode\nFROM frpm AS f\nJOIN schools AS s ON s.CDSCode = f.CDSCode\nWHERE (s.Charter IS NULL OR s.Charter = 0)\n  AND f.\"Enrollment (K-12)\" > 100\n  AND f.\"Percent (%) Eligible FRPM (K-12)\" = (\n    SELECT MIN(f2.\"Percent (%) Eligible FRPM (K-12)\")\n    FROM frpm AS f2\n    JOIN schools AS s2 ON s2.CDSCode = f2.CDSCode\n    WHERE (s2.Charter IS NULL OR s2.Charter = 0)\n      AND f2.\"Enrollment (K-12)\" > 100\n  )\n```\n\nSub question 4: Final combined result with all requested fields.\nSQL 4:\n```sql\nWITH base AS (\n  SELECT f.CDSCode, f.\"School Name\", f.\"Enrollment (K-12)\", f.\"FRPM Count (K-12)\",\n         f.\"Percent (%) Eligible FRPM (K-12)\"\n  FROM frpm AS f\n  JOIN schools AS s ON s.CDSCode = f.CDSCode\n  WHERE (s.Charter IS NULL OR s.Charter = 0)\n    AND f.\"Enrollment (K-12)\" > 100\n),\nparts AS (\n  SELECT 'largest FRPM-eligible count' AS part, CDSCode FROM base\n  WHERE \"FRPM Count (K-12)\" = (SELECT MAX(\"FRPM Count (K-12)\") FROM base)\n  UNION ALL\n  SELECT 'smallest FRPM share' AS part, CDSCode FROM base\n  WHERE \"Percent (%) Eligible FRPM (K-12)\" = (SELECT MIN(\"Percent (%) Eligible FRPM (K-12)\") FROM base)\n  UNION ALL\n  SELECT 'the CDS code from my notes' AS part, CDSCode FROM base\n  WHERE CDSCode = '4615150435602'\n)\nSELECT p.part,\n       s.School AS school_name,\n       s.County AS county,\n       s.City AS city,\n       s.MailStreet AS mailing_street,\n       s.MailCity AS mailing_city,\n       s.MailState AS mailing_state,\n       s.MailZip AS mailing_zip,\n       s.Website AS website,\n       f.\"Enrollment (K-12)\" AS k12_enrollment,\n       f.\"FRPM Count (K-12)\" AS frpm_count,\n       f.\"Percent (%) Eligible FRPM (K-12)\" AS frpm_share,\n       (sc.AvgScrRead + sc.AvgScrMath + sc.AvgScrWrite) AS avg_total_sat,\n       (100.0 * sc.NumGE1500 / sc.NumTstTakr) AS pct_ge_1500,\n       s.OpenDate AS opening_date,\n       CASE WHEN s.ClosedDate IS NOT NULL THEN 'closed' ELSE 'open' END AS status\nFROM parts AS p\nJOIN schools AS s ON s.CDSCode =",
+      "done_reason": "length",
+      "elapsed_seconds": 5.57467010000255,
+      "duration_scope": "model_request",
+      "raw_usage": {
+        "prompt_tokens": 3182,
+        "completion_tokens": 1000,
+        "total_tokens": 4182,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "prompt_cache_hit_tokens": 128,
+        "prompt_cache_miss_tokens": 3054,
+        "prompt_eval_count": 3182,
+        "eval_count": 1000,
+        "response_format_contract": "text",
+        "finish_reason": "length",
+        "ledger_request_id": "1fdbd9da93404ccba6d80564e2fbae79",
+        "returned_model": "deepseek-flash"
+      },
+      "input_tokens": 3182,
+      "output_tokens": 1000,
+      "usage_complete": true,
+      "trace_schema_version": 2,
+      "event_sequence": 15,
+      "timestamp": "2026-11-11T06:55:11.060753+00:00",
+      "elapsed": 5.720475699999952
+    }
+  },
+  "174": {
+    "source": "output\\issue123-deepseek-diagnostic100-20261111\\q174",
+    "question": {
+      "question_id": "174",
+      "db_id": "european_football_2",
+      "question": "I've shortlisted the players whose overall rating as of 31 December 2010 was above 80 - strictly above 80, that is. How many matches did these players play on average during the 2010/2011 season? Please give me just that single average, rounded to two decimals.",
+      "evidence": ""
+    },
+    "failure": {
+      "event": "call_failed",
+      "run_id": "q174",
+      "question_id": "174",
+      "models": {
+        "selector": "deepseek-flash",
+        "decomposer": "deepseek-flash",
+        "refiner": "deepseek-flash"
+      },
+      "call_id": "ff9fabb560f34d28b1ea71f75812cf27",
+      "role": "decomposer",
+      "error_type": "APIRunError",
+      "error": "DeepSeek request failed: output_truncated",
+      "code": "output_truncated",
+      "purpose": "generation_or_repair",
+      "response": "Sub question 1: Which players had an overall rating above 80 as of 31 December 2010 (using their most recent rating on or before that date)?\nSQL 1:\n```sql\nSELECT pa.player_api_id\nFROM Player_Attributes AS pa\nWHERE pa.date = (\n  SELECT MAX(pa2.date)\n  FROM Player_Attributes AS pa2\n  WHERE pa2.player_api_id = pa.player_api_id\n    AND pa2.date <= '2010-12-31 00:00:00'\n)\nAND pa.overall_rating > 80\n```\n\nSub question 2: How many matches did each of these players play during the 2010/2011 season (counting appearances in any of the 22 player slots)?\nSQL 2:\n```sql\nWITH qualified AS (\n  SELECT pa.player_api_id\n  FROM Player_Attributes AS pa\n  WHERE pa.date = (\n    SELECT MAX(pa2.date)\n    FROM Player_Attributes AS pa2\n    WHERE pa2.player_api_id = pa.player_api_id\n      AND pa2.date <= '2010-12-31 00:00:00'\n  )\n  AND pa.overall_rating > 80\n),\nappearances AS (\n  SELECT home_player_1 AS pid FROM Match WHERE season = '2010/2011'\n  UNION ALL SELECT home_player_2 FROM Match WHERE season = '2010/2011'\n  UNION ALL SELECT home_player_3 FROM Match WHERE season = '2010/2011'\n  UNION ALL SELECT home_player_4 FROM Match WHERE season = '2010/2011'\n  UNION ALL SELECT home_player_5 FROM Match WHERE season = '2010/2011'\n  UNION ALL SELECT home_player_6 FROM Match WHERE season = '2010/2011'\n  UNION ALL SELECT home_player_7 FROM Match WHERE season = '2010/2011'\n  UNION ALL SELECT home_player_8 FROM Match WHERE season = '2010/2011'\n  UNION ALL SELECT home_player_9 FROM Match WHERE season = '2010/2011'\n  UNION ALL SELECT home_player_10 FROM Match WHERE season = '2010/2011'\n  UNION ALL SELECT home_player_11 FROM Match WHERE season = '2010/2011'\n  UNION ALL SELECT away_player_1 FROM Match WHERE season = '2010/2011'\n  UNION ALL SELECT away_player_2 FROM Match WHERE season = '2010/2011'\n  UNION ALL SELECT away_player_3 FROM Match WHERE season = '2010/2011'\n  UNION ALL SELECT away_player_4 FROM Match WHERE season = '2010/2011'\n  UNION ALL SELECT away_player_5 FROM Match WHERE season = '2010/2011'\n  UNION ALL SELECT away_player_6 FROM Match WHERE season = '2010/2011'\n  UNION ALL SELECT away_player_7 FROM Match WHERE season = '2010/2011'\n  UNION ALL SELECT away_player_8 FROM Match WHERE season = '2010/2011'\n  UNION ALL SELECT away_player_9 FROM Match WHERE season = '2010/2011'\n  UNION ALL SELECT away_player_10 FROM Match WHERE season = '2010/2011'\n  UNION ALL SELECT away_player_11 FROM Match WHERE season = '2010/2011'\n)\nSELECT q.player_api_id, COUNT(a.pid) AS match_count\nFROM qualified AS q\nLEFT JOIN appearances AS a ON a.pid = q.player_api_id\nGROUP BY q.player_api_id\n```\n\nSub question 3: What is the average number of matches played by these players during the 2010/2011 season, rounded to two decimals?\nSQL 3:\n```sql\nWITH qualified AS (\n  SELECT pa.player_api_id\n  FROM Player_Attributes AS pa\n  WHERE pa.date = (\n    SELECT MAX(pa2.date)\n    FROM Player_Attributes AS pa2\n    WHERE pa2.player_api_id = pa.player_api_id\n      AND pa2.date <= '2010-12-31 00:00:00'\n  )\n  AND pa.overall_rating > 80\n),\nappearances AS (\n  SELECT home_player_1 AS pid FROM Match WHERE season = '2010/2011'\n  UNION ALL SELECT home_player_2 FROM Match WHERE season = '2010/2011'\n  UNION ALL SELECT home_player_3 FROM Match WHERE season = '2010/2011'\n  UNION ALL SELECT home_player_4 FROM Match WHERE season = '2010/2011'\n  UNION ALL SELECT home_player_5 FROM Match WHERE season = '2010/2011'\n  UNION ALL SELECT home_player_6 FROM Match WHERE season = '2010/2011'\n  UNION ALL SELECT",
+      "done_reason": "length",
+      "elapsed_seconds": 5.114499000002979,
+      "duration_scope": "model_request",
+      "raw_usage": {
+        "prompt_tokens": 1114,
+        "completion_tokens": 1000,
+        "total_tokens": 2114,
+        "prompt_tokens_details": {
+          "cached_tokens": 512
+        },
+        "prompt_cache_hit_tokens": 512,
+        "prompt_cache_miss_tokens": 602,
+        "prompt_eval_count": 1114,
+        "eval_count": 1000,
+        "response_format_contract": "text",
+        "finish_reason": "length",
+        "ledger_request_id": "a17f7ef3f8f44bcdb5a860bc75121e78",
+        "returned_model": "deepseek-flash"
+      },
+      "input_tokens": 1114,
+      "output_tokens": 1000,
+      "usage_complete": true,
+      "trace_schema_version": 2,
+      "event_sequence": 14,
+      "timestamp": "2026-11-11T07:10:31.076466+00:00",
+      "elapsed": 9.606862100001308
+    }
+  },
+  "184": {
+    "source": "output\\issue123-deepseek-diagnostic100-20261111\\q184",
+    "question": {
+      "question_id": "184",
+      "db_id": "european_football_2",
+      "question": "I'm studying squad physical profiles in Serie A. For the 2008/2009 season and the 2015/2016 season of the Italian league, I'd like to know how many players appeared in matches that season (i.e. were listed in a match's lineup, including players who appeared in both seasons), and the average height of those players in centimeters, rounded to two decimals. One row per season with the season label, the count of players, and their average height.",
+      "evidence": "A player appeared in a match if he is listed in that match's lineup (eleven home and eleven away players). Italian league = the league of the country Italy."
+    },
+    "failure": {
+      "event": "call_failed",
+      "run_id": "q184",
+      "question_id": "184",
+      "models": {
+        "selector": "deepseek-flash",
+        "decomposer": "deepseek-flash",
+        "refiner": "deepseek-flash"
+      },
+      "call_id": "466b58cde3a049c9b1f1f38e35efe581",
+      "role": "decomposer",
+      "error_type": "APIRunError",
+      "error": "DeepSeek request failed: output_truncated",
+      "code": "output_truncated",
+      "purpose": "generation_or_repair",
+      "response": "Sub question 1: Which league id corresponds to the Italian league (Serie A)?\nSQL 1:\n```sql\nSELECT l.id FROM League AS l JOIN Country AS c ON c.id = l.country_id WHERE c.name = 'Italy'\n```\n\nSub question 2: Which player_api_ids appeared in a lineup (home or away) in matches of that league for the two seasons?\nSQL 2:\n```sql\nSELECT m.season, m.home_player_1 AS pid FROM \"Match\" AS m JOIN League AS l ON l.id = m.league_id JOIN Country AS c ON c.id = l.country_id WHERE c.name = 'Italy' AND m.season IN ('2008/2009','2015/2016') AND m.home_player_1 IS NOT NULL\nUNION\nSELECT m.season, m.home_player_2 FROM \"Match\" AS m JOIN League AS l ON l.id = m.league_id JOIN Country AS c ON c.id = l.country_id WHERE c.name = 'Italy' AND m.season IN ('2008/2009','2015/2016') AND m.home_player_2 IS NOT NULL\nUNION\n... (all 22 columns)\n```\n\nSub question 3: For each season, count distinct players and average their height.\nSQL 3 (final):\n```sql\nWITH lineup AS (\n  SELECT m.season, m.home_player_1 AS pid FROM \"Match\" AS m JOIN League AS l ON l.id = m.league_id JOIN Country AS c ON c.id = l.country_id WHERE c.name = 'Italy' AND m.season IN ('2008/2009','2015/2016')\n  UNION ALL SELECT m.season, m.home_player_2 FROM \"Match\" AS m JOIN League AS l ON l.id = m.league_id JOIN Country AS c ON c.id = l.country_id WHERE c.name = 'Italy' AND m.season IN ('2008/2009','2015/2016')\n  UNION ALL SELECT m.season, m.home_player_3 FROM \"Match\" AS m JOIN League AS l ON l.id = m.league_id JOIN Country AS c ON c.id = l.country_id WHERE c.name = 'Italy' AND m.season IN ('2008/2009','2015/2016')\n  UNION ALL SELECT m.season, m.home_player_4 FROM \"Match\" AS m JOIN League AS l ON l.id = m.league_id JOIN Country AS c ON c.id = l.country_id WHERE c.name = 'Italy' AND m.season IN ('2008/2009','2015/2016')\n  UNION ALL SELECT m.season, m.home_player_5 FROM \"Match\" AS m JOIN League AS l ON l.id = m.league_id JOIN Country AS c ON c.id = l.country_id WHERE c.name = 'Italy' AND m.season IN ('2008/2009','2015/2016')\n  UNION ALL SELECT m.season, m.home_player_6 FROM \"Match\" AS m JOIN League AS l ON l.id = m.league_id JOIN Country AS c ON c.id = l.country_id WHERE c.name = 'Italy' AND m.season IN ('2008/2009','2015/2016')\n  UNION ALL SELECT m.season, m.home_player_7 FROM \"Match\" AS m JOIN League AS l ON l.id = m.league_id JOIN Country AS c ON c.id = l.country_id WHERE c.name = 'Italy' AND m.season IN ('2008/2009','2015/2016')\n  UNION ALL SELECT m.season, m.home_player_8 FROM \"Match\" AS m JOIN League AS l ON l.id = m.league_id JOIN Country AS c ON c.id = l.country_id WHERE c.name = 'Italy' AND m.season IN ('2008/2009','2015/2016')\n  UNION ALL SELECT m.season, m.home_player_9 FROM \"Match\" AS m JOIN League AS l ON l.id = m.league_id JOIN Country AS c ON c.id = l.country_id WHERE c.name = 'Italy' AND m.season IN ('2008/2009','2015/2016')\n  UNION ALL SELECT m.season, m.home_player_10 FROM \"Match\" AS m JOIN League AS l ON l.id = m.league_id JOIN Country AS c ON c.id = l.country_id WHERE c.name = 'Italy' AND m.season IN ('2008/2009','2015/2016')\n  UNION ALL SELECT m.season, m.home_player_11 FROM \"Match\" AS m JOIN League AS l ON l.id = m.league_id JOIN Country AS c ON c",
+      "done_reason": "length",
+      "elapsed_seconds": 4.790899499988882,
+      "duration_scope": "model_request",
+      "raw_usage": {
+        "prompt_tokens": 1592,
+        "completion_tokens": 1000,
+        "total_tokens": 2592,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "prompt_cache_hit_tokens": 128,
+        "prompt_cache_miss_tokens": 1464,
+        "prompt_eval_count": 1592,
+        "eval_count": 1000,
+        "response_format_contract": "text",
+        "finish_reason": "length",
+        "ledger_request_id": "51b2709a2b704f8db42fdff2555cf293",
+        "returned_model": "deepseek-flash"
+      },
+      "input_tokens": 1592,
+      "output_tokens": 1000,
+      "usage_complete": true,
+      "trace_schema_version": 2,
+      "event_sequence": 14,
+      "timestamp": "2026-11-11T06:57:14.846039+00:00",
+      "elapsed": 7.98087939999823
+    }
+  },
+  "230": {
+    "source": "output\\issue123-deepseek-diagnostic100-20261111\\q230",
+    "question": {
+      "question_id": "230",
+      "db_id": "financial",
+      "question": "I need to profile our three largest loans held by female clients. Please report for each of these loans: the client id, loan amount, duration in months, total payments, interest paid, loan status, the district and region of the branch where the loan's account is held, the account's transaction count and total deposits, an income category, the number of loans the bank has granted in that region, the average of the average salaries of that region's districts, and the client's completed age on 2026-10-09. A few notes: the three largest loans are the three highest approved loan amounts, and if amounts tie, include all tied loans. Total payments is the monthly payment times the duration, and interest paid is total payments minus the approved amount; round money figures to two decimals. The income category is High Income if total deposits exceed twice the loan amount, Medium Income if they exceed the loan amount, and Low Income otherwise. Loans in a region counts every loan the bank has granted in that region for all clients, not only female clients. The region's average salary is the average of the average salaries of the districts in that region, rounded to two decimals. For the age, use the completed age on 2026-10-09, subtracting one if the birthday hasn't occurred by that date.",
+      "evidence": "Female means client gender = 'F'. Deposits are transactions recorded as PRIJEM (credits to the account). District average salary is the district's average salary figure."
+    },
+    "failure": {
+      "event": "call_failed",
+      "run_id": "q230",
+      "question_id": "230",
+      "models": {
+        "selector": "deepseek-flash",
+        "decomposer": "deepseek-flash",
+        "refiner": "deepseek-flash"
+      },
+      "call_id": "2a4ead4f39114da58bed92b79d708e0e",
+      "role": "decomposer",
+      "error_type": "APIRunError",
+      "error": "DeepSeek request failed: output_truncated",
+      "code": "output_truncated",
+      "purpose": "generation_or_repair",
+      "response": "Sub question 1: Which loans are the three largest approved amounts (including ties)?\nSQL 1:\n```sql\nSELECT loan_id, account_id, amount, duration, payments, status\nFROM loan\nWHERE amount >= (\n  SELECT amount FROM loan ORDER BY amount DESC LIMIT 1 OFFSET 2\n)\n```\n\nSub question 2: For those loans, get the female client id, district and region of the account's branch.\nSQL 2:\n```sql\nSELECT l.loan_id, l.account_id, l.amount, l.duration, l.payments, l.status,\n       c.client_id, d.district_id, d.A2 AS district_name, d.A3 AS region\nFROM loan l\nJOIN disp dp ON dp.account_id = l.account_id AND dp.type = 'OWNER'\nJOIN client c ON c.client_id = dp.client_id AND c.gender = 'F'\nJOIN account a ON a.account_id = l.account_id\nJOIN district d ON d.district_id = a.district_id\nWHERE l.amount >= (SELECT amount FROM loan ORDER BY amount DESC LIMIT 1 OFFSET 2)\n```\n\nSub question 3: For each such account, get transaction count and total deposits (PRIJEM).\nSQL 3:\n```sql\nSELECT account_id,\n       COUNT(*) AS trans_count,\n       SUM(CASE WHEN type = 'PRIJEM' THEN amount ELSE 0 END) AS total_deposits\nFROM trans\nGROUP BY account_id\n```\n\nSub question 4: For each region, count all loans granted and average of district average salaries.\nSQL 4:\n```sql\nSELECT d.A3 AS region,\n       COUNT(l.loan_id) AS region_loan_count,\n       ROUND(AVG(d2.A11), 2) AS region_avg_salary\nFROM district d\nJOIN account a ON a.district_id = d.district_id\nJOIN loan l ON l.account_id = a.account_id\nJOIN district d2 ON d2.A3 = d.A3\nGROUP BY d.A3\n```\n\nFinal SQL:\n```sql\nWITH top_loans AS (\n  SELECT loan_id, account_id, amount, duration, payments, status\n  FROM loan\n  WHERE amount >= (SELECT amount FROM loan ORDER BY amount DESC LIMIT 1 OFFSET 2)\n),\nloan_info AS (\n  SELECT l.loan_id, l.account_id, l.amount, l.duration, l.payments, l.status,\n         c.client_id, c.birth_date, d.A2 AS district_name, d.A3 AS region\n  FROM top_loans l\n  JOIN disp dp ON dp.account_id = l.account_id AND dp.type = 'OWNER'\n  JOIN client c ON c.client_id = dp.client_id AND c.gender = 'F'\n  JOIN account a ON a.account_id = l.account_id\n  JOIN district d ON d.district_id = a.district_id\n),\ntrans_agg AS (\n  SELECT account_id,\n         COUNT(*) AS trans_count,\n         SUM(CASE WHEN type = 'PRIJEM' THEN amount ELSE 0 END) AS total_deposits\n  FROM trans\n  GROUP BY account_id\n),\nregion_stats AS (\n  SELECT d.A3 AS region,\n         COUNT(l.loan_id) AS region_loan_count,\n         ROUND(AVG(d2.A11), 2) AS region_avg_salary\n  FROM district d\n  JOIN account a ON a.district_id = d.district_id\n  JOIN loan l ON l.account_id = a.account_id\n  JOIN district d2 ON d2.A3 = d.A3\n  GROUP BY d.A3\n)\nSELECT\n  li.client_id,\n  li.amount AS loan_amount,\n  li.duration AS duration_months,\n  ROUND(li.payments * li.duration, 2) AS total_payments,\n  ROUND(li.payments * li.duration - li.amount, 2) AS interest_paid,\n  li.status AS loan_status,\n  li.district_name AS district,\n  li.region AS region,\n  ta.trans_count,\n  ROUND(ta.total_deposits, 2) AS total_deposits,\n  CASE\n    WHEN ta.total_deposits > 2 * li.amount THEN 'High Income'\n    WHEN ta.total_deposits > li.amount THEN 'Medium Income'\n    ELSE 'Low Income'\n  END AS income_category,\n  rs.region_loan_count,\n  rs.region_avg_salary,\n  CAST(strftime('%Y', '2026-10-09') AS INTEGER) - CAST(strftime",
+      "done_reason": "length",
+      "elapsed_seconds": 5.327067699996405,
+      "duration_scope": "model_request",
+      "raw_usage": {
+        "prompt_tokens": 2032,
+        "completion_tokens": 1000,
+        "total_tokens": 3032,
+        "prompt_tokens_details": {
+          "cached_tokens": 1408
+        },
+        "prompt_cache_hit_tokens": 1408,
+        "prompt_cache_miss_tokens": 624,
+        "prompt_eval_count": 2032,
+        "eval_count": 1000,
+        "response_format_contract": "text",
+        "finish_reason": "length",
+        "ledger_request_id": "db68c697f860417d9ca98dde66c46093",
+        "returned_model": "deepseek-flash"
+      },
+      "input_tokens": 2032,
+      "output_tokens": 1000,
+      "usage_complete": true,
+      "trace_schema_version": 2,
+      "event_sequence": 13,
+      "timestamp": "2026-11-11T06:58:37.448240+00:00",
+      "elapsed": 5.516627000004519
+    }
+  },
+  "234": {
+    "source": "output\\issue123-deepseek-diagnostic100-20261111\\q234",
+    "question": {
+      "question_id": "234",
+      "db_id": "financial",
+      "question": "I'm preparing our branch's annual customer review. For every account held at the Tabor branch as of 31 December 1996, I need a one-row profile per account, ordered among tied ranks by ascending account id, showing: the account id; the date the account was opened; the owner's gender and their age at 31 December 1996 in whole completed years; the number of credit cards issued to the account by 31 December 1996 (0 if none); the number of loans approved to the account by 31 December 1996 (0 if none); a loan standing label; the number of transactions on the account during 1997; the total money into the account during 1997; the total money out of the account during 1997; the peak balance reached on the account during 1997 (0 if none); and the account's rank by 1997 peak balance, highest first, with ties sharing a rank and the next rank skipped (e.g. 1, 1, 3). All 'as of' figures are taken at 31 December 1996; activity figures cover the calendar year 1997. A card or loan counts as held if it was issued or approved on or before 31 December 1996. The loan standing label is: 'no loan' if the account had no loans approved by 31 December 1996; otherwise 'defaulted' if any of its loans has repayment status B; otherwise 'repaying' if any has status C or D; otherwise 'paid off'. Money in is the sum of credit transaction amounts; money out is the sum of debit and cash-withdrawal transaction amounts. The account owner is the person with the 'OWNER' disposition on the account; other dispositions are just additional users. Nothing beyond these fields, please.",
+      "evidence": "Loan repayment status codes: A means the contract finished and was paid off, B means the loan was not repaid (default), C means the loan is running and being repaid, D means the loan is running and the client is in debt on it. Transaction types: a credit transaction brings money into the account, a debit transaction takes money out, and a cash withdrawal takes money out in cash."
+    },
+    "failure": {
+      "event": "call_failed",
+      "run_id": "q234",
+      "question_id": "234",
+      "models": {
+        "selector": "deepseek-flash",
+        "decomposer": "deepseek-flash",
+        "refiner": "deepseek-flash"
+      },
+      "call_id": "2bac633e0a9146e1a1a4a994946b440d",
+      "role": "decomposer",
+      "error_type": "APIRunError",
+      "error": "DeepSeek request failed: output_truncated",
+      "code": "output_truncated",
+      "purpose": "generation_or_repair",
+      "response": "Sub question 1: Which district_id corresponds to the Tabor branch?\nSQL 1:\n```sql\nSELECT district_id FROM district WHERE A2 = 'Tabor'\n```\n\nSub question 2: Which accounts belong to the Tabor branch, with their open date and owner?\nSQL 2:\n```sql\nSELECT a.account_id, a.date, d.client_id\nFROM account a\nJOIN disp d ON d.account_id = a.account_id AND d.type = 'OWNER'\nWHERE a.district_id = (SELECT district_id FROM district WHERE A2 = 'Tabor')\n```\n\nSub question 3: Owner gender and age at 31 Dec 1996.\nSQL 3:\n```sql\nSELECT c.client_id, c.gender,\n       CAST((julianday('1996-12-31') - julianday(c.birth_date)) / 365.25 AS INTEGER) AS age\nFROM client c\n```\n\nSub question 4: Card counts and loan counts/status per account by 31 Dec 1996.\nSQL 4:\n```sql\nSELECT d.account_id,\n       COUNT(DISTINCT ca.card_id) AS cards,\n       COUNT(DISTINCT l.loan_id) AS loans,\n       MAX(CASE WHEN l.status = 'B' THEN 1 ELSE 0 END) AS has_b,\n       MAX(CASE WHEN l.status IN ('C','D') THEN 1 ELSE 0 END) AS has_cd\nFROM disp d\nLEFT JOIN card ca ON ca.disp_id = d.disp_id AND ca.issued <= '1996-12-31'\nLEFT JOIN loan l ON l.account_id = d.account_id AND l.date <= '1996-12-31'\nGROUP BY d.account_id\n```\n\nSub question 5: 1997 transaction aggregates per account.\nSQL 5:\n```sql\nSELECT account_id,\n       COUNT(*) AS txn_count,\n       SUM(CASE WHEN type = 'PRIJEM' THEN amount ELSE 0 END) AS money_in,\n       SUM(CASE WHEN type IN ('VYDAJ','VYBER') THEN amount ELSE 0 END) AS money_out,\n       MAX(balance) AS peak_balance\nFROM trans\nWHERE date >= '1997-01-01' AND date <= '1997-12-31'\nGROUP BY account_id\n```\n\nSub question 6: Final combined profile with rank.\nSQL 6:\n```sql\nWITH tabor AS (\n  SELECT a.account_id, a.date AS open_date, d.client_id\n  FROM account a\n  JOIN disp d ON d.account_id = a.account_id AND d.type = 'OWNER'\n  WHERE a.district_id = (SELECT district_id FROM district WHERE A2 = 'Tabor')\n),\nowner AS (\n  SELECT c.client_id, c.gender,\n         CAST((julianday('1996-12-31') - julianday(c.birth_date)) / 365.25 AS INTEGER) AS age\n  FROM client c\n),\ncards AS (\n  SELECT d.account_id, COUNT(ca.card_id) AS cards\n  FROM disp d\n  LEFT JOIN card ca ON ca.disp_id = d.disp_id AND ca.issued <= '1996-12-31'\n  GROUP BY d.account_id\n),\nloans AS (\n  SELECT account_id,\n         COUNT(*) AS loans,\n         MAX(CASE WHEN status = 'B' THEN 1 ELSE 0 END) AS has_b,\n         MAX(CASE WHEN status IN ('C','D') THEN 1 ELSE 0 END) AS has_cd\n  FROM loan\n  WHERE date <= '1996-12-31'\n  GROUP BY account_id\n),\ntxn AS (\n  SELECT account_id,\n         COUNT(*) AS txn_count,\n         SUM(CASE WHEN type = 'PRIJEM' THEN amount ELSE 0 END) AS money_in,\n         SUM(CASE WHEN type IN ('VYDAJ','VYBER') THEN amount ELSE 0 END) AS money_out,\n         MAX(balance) AS peak_balance\n  FROM trans\n  WHERE date >= '1997-01-01' AND date <= '1997-12-31'\n  GROUP BY account_id\n),\nprofiles AS (\n  SELECT t.account_id,\n         t.open_date,\n         o.gender,\n         o.age,\n         COALESCE(ca.cards, 0) AS cards,\n         COALESCE(l.loans, 0) AS loans,\n         CASE\n           WHEN COALESCE(l.loans, 0) = 0 THEN 'no loan'\n           WHEN l.has_b = 1 THEN 'defaulted'\n           WHEN l.has_cd = 1 THEN 'repaying'\n           ELSE 'paid off'\n        ",
+      "done_reason": "length",
+      "elapsed_seconds": 5.512761899997713,
+      "duration_scope": "model_request",
+      "raw_usage": {
+        "prompt_tokens": 2195,
+        "completion_tokens": 1000,
+        "total_tokens": 3195,
+        "prompt_tokens_details": {
+          "cached_tokens": 1408
+        },
+        "prompt_cache_hit_tokens": 1408,
+        "prompt_cache_miss_tokens": 787,
+        "prompt_eval_count": 2195,
+        "eval_count": 1000,
+        "response_format_contract": "text",
+        "finish_reason": "length",
+        "ledger_request_id": "c318c3d14803497bbd3ee2473a54915c",
+        "returned_model": "deepseek-flash"
+      },
+      "input_tokens": 2195,
+      "output_tokens": 1000,
+      "usage_complete": true,
+      "trace_schema_version": 2,
+      "event_sequence": 11,
+      "timestamp": "2026-11-11T06:55:43.089293+00:00",
+      "elapsed": 5.768628899997566
+    }
+  },
+  "222": {
+    "source": "output\\issue123-deepseek-diagnostic100-20261111\\q222",
+    "question": {
+      "question_id": "222",
+      "db_id": "financial",
+      "question": "I'm preparing a client review for client 3541. For each account this client can access, I need one row with: the account id, the date the account was opened, its frequency, the name and region of the district where the account is held, whether that district is the client's home district (Yes/No), that district's average salary, the loan repayment status (none if there's no loan), the loan amount (0 if no loan), the number of transactions over the account's whole recorded history, total income, total expense, net balance, the number of clients whose home district lies in that region, the name of the most populous district in that region, that district's number of inhabitants, and the account district's population rank within its region. Order the rows by number of transactions, most first, with ties broken by ascending account id. The client's home district is the district recorded for the client, and population means number of inhabitants. For ranks, the most populous district is rank 1; districts with equal population share a rank and the next rank skips.",
+      "evidence": "PRIJEM = incoming transaction; VYDAJ = outgoing transaction; net balance = total income - total expense"
+    },
+    "validation": {
+      "event": "sql_validation",
+      "run_id": "q222",
+      "question_id": "222",
+      "models": {
+        "selector": "deepseek-flash",
+        "decomposer": "deepseek-flash",
+        "refiner": "deepseek-flash"
+      },
+      "sql": "WITH acc AS (\n  SELECT account_id FROM disp WHERE client_id = 3541\n),\nhome AS (\n  SELECT district_id AS home_district FROM client WHERE client_id = 3541\n),\ntx AS (\n  SELECT account_id,\n         COUNT(*) AS num_trans,\n         SUM(CASE WHEN type = 'PRIJEM' THEN amount ELSE 0 END) AS total_income,\n         SUM(CASE WHEN type = 'VYDAJ' THEN amount ELSE 0 END) AS total_expense\n  FROM trans\n  GROUP BY account_id\n),\nranked AS (\n  SELECT d.district_id, d.A3 AS region,\n         CAST(d.A4 AS INTEGER) AS pop,\n         RANK() OVER (PARTITION BY d.A3 ORDER BY CAST(d.A4 AS INTEGER) DESC) AS pop_rank\n  FROM district d\n),\nregion_clients AS (\n  SELECT d.A3 AS region, COUNT(*) AS num_clients\n  FROM client c JOIN district d ON c.district_id = d.district_id\n  GROUP BY d.A3\n),\nregion_top AS (\n  SELECT region, A2 AS top_district, pop AS top_pop\n  FROM ranked WHERE pop_rank = 1\n)\nSELECT\n  a.account_id,\n  a.date,\n  a.frequency,\n  d.A2 AS district_name,\n  d.A3 AS region,\n  CASE WHEN a.district_id = (SELECT home_district FROM home) THEN 'Yes' ELSE 'No' END AS is_home,\n  d.A11 AS avg_salary,\n  COALESCE(l.status, 'none') AS loan_status,\n  COALESCE(l.amount, 0) AS loan_amount,\n  COALESCE(tx.num_trans, 0) AS num_trans,\n  COALESCE(tx.total_income, 0) AS total_income,\n  COALESCE(tx.total_expense, 0) AS total_expense,\n  COALESCE(tx.total_income, 0) - COALESCE(tx.total_expense, 0) AS net_balance,\n  rc.num_clients,\n  rt.top_district,\n  rt.top_pop,\n  rk.pop_rank\nFROM acc\nJOIN account a ON a.account_id = acc.account_id\nJOIN district d ON d.district_id = a.district_id\nLEFT JOIN loan l ON l.account_id = a.account_id\nLEFT JOIN tx ON tx.account_id = a.account_id\nJOIN region_clients rc ON rc.region = d.A3\nJOIN region_top rt ON rt.region = d.A3\nJOIN ranked rk ON rk.district_id = d.district_id\nORDER BY COALESCE(tx.num_trans, 0) DESC, a.account_id ASC",
+      "feedback": {
+        "status": "error",
+        "phase": "compile",
+        "strict_identifiers": true,
+        "error_type": "OperationalError",
+        "message": "no such column: A2",
+        "truncated": false,
+        "identifier_kind": "missing_column",
+        "identifier": "A2",
+        "exact_column_owners": [
+          "\"district\".\"A2\""
+        ],
+        "owners_truncated": false
+      },
+      "repair_count": 0,
+      "trace_schema_version": 2,
+      "event_sequence": 15,
+      "timestamp": "2026-11-11T06:55:20.229212+00:00",
+      "elapsed": 4.569113500008825
+    },
+    "schema": {
+      "account": {
+        "columns": {
+          "account_id": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "the id of the account",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "district_id": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "location of branch",
+            "documented_examples": "[18, 1]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "18",
+              "1"
+            ],
+            "samples_incomplete": true
+          },
+          "frequency": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "frequency of the acount",
+            "documented_examples": "['POPLATEK MESICNE']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "POPLATEK MESICNE",
+              "POPLATEK TYDNE"
+            ],
+            "samples_incomplete": true
+          },
+          "date": {
+            "type": "DATE",
+            "pk": false,
+            "description": "the creation date of the account",
+            "documented_examples": "['1995-03-24', '1993-02-26']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1995-03-24",
+              "1993-02-26"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "district_id",
+            "table": "district",
+            "target": "district_id"
+          }
+        ]
+      },
+      "card": {
+        "columns": {
+          "card_id": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "id number of credit card",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "disp_id": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "disposition id",
+            "documented_examples": "[9, 19]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "9",
+              "19"
+            ],
+            "samples_incomplete": true
+          },
+          "type": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "type of credit card",
+            "documented_examples": "['gold', 'classic']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "gold",
+              "classic"
+            ],
+            "samples_incomplete": true
+          },
+          "issued": {
+            "type": "DATE",
+            "pk": false,
+            "description": "the date when the credit card issued",
+            "documented_examples": "['1998-10-16', '1998-03-13']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1998-10-16",
+              "1998-03-13"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "disp_id",
+            "table": "disp",
+            "target": "disp_id"
+          }
+        ]
+      },
+      "client": {
+        "columns": {
+          "client_id": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "the unique number",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "gender": {
+            "type": "TEXT",
+            "pk": false,
+            "documented_examples": "['F', 'M']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "F",
+              "M"
+            ],
+            "samples_incomplete": true
+          },
+          "birth_date": {
+            "type": "DATE",
+            "pk": false,
+            "description": "birth date",
+            "documented_examples": "['1970-12-13', '1945-02-04']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1970-12-13",
+              "1945-02-04"
+            ],
+            "samples_incomplete": true
+          },
+          "district_id": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "location of branch",
+            "documented_examples": "[18, 1]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "18",
+              "1"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "district_id",
+            "table": "district",
+            "target": "district_id"
+          }
+        ]
+      },
+      "disp": {
+        "columns": {
+          "disp_id": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "unique number of identifying this row of record",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "client_id": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "id number of client",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "account_id": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "id number of account",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "type": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "type of disposition",
+            "documented_examples": "['OWNER', 'DISPONENT']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "OWNER",
+              "DISPONENT"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "client_id",
+            "table": "client",
+            "target": "client_id"
+          },
+          {
+            "column": "account_id",
+            "table": "account",
+            "target": "account_id"
+          }
+        ]
+      },
+      "district": {
+        "columns": {
+          "district_id": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "location of branch",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "A2": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "district_name",
+            "documented_examples": "['Hl.m. Praha', 'Benesov']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "Hl.m. Praha",
+              "Benesov"
+            ],
+            "samples_incomplete": true
+          },
+          "A3": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "region",
+            "documented_examples": "['Prague', 'central Bohemia']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "Prague",
+              "central Bohemia"
+            ],
+            "samples_incomplete": true
+          },
+          "A4": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "number of inhabitants",
+            "documented_examples": "['1204953', '88884']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1204953",
+              "88884"
+            ],
+            "samples_incomplete": true
+          },
+          "A5": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "municipality < district < region",
+            "documented_examples": "['0', '80']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "0",
+              "80"
+            ],
+            "samples_incomplete": true
+          },
+          "A6": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "municipality < district < region",
+            "documented_examples": "['0', '26']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "0",
+              "26"
+            ],
+            "samples_incomplete": true
+          },
+          "A7": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "municipality < district < region",
+            "documented_examples": "['0', '6']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "0",
+              "6"
+            ],
+            "samples_incomplete": true
+          },
+          "A8": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "municipality < district < region",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "A9": {
+            "type": "INTEGER",
+            "pk": false,
+            "documented_examples": "[1, 5]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "5"
+            ],
+            "samples_incomplete": true
+          },
+          "A10": {
+            "type": "REAL",
+            "pk": false,
+            "description": "ratio of urban inhabitants",
+            "documented_examples": "[100.0, 46.7]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "100.0",
+              "46.7"
+            ],
+            "samples_incomplete": true
+          },
+          "A11": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "average salary",
+            "documented_examples": "[12541, 8507]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "12541",
+              "8507"
+            ],
+            "samples_incomplete": true
+          },
+          "A12": {
+            "type": "REAL",
+            "pk": false,
+            "description": "unemployment rate 1995",
+            "documented_examples": "[0.2, 1.6]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "0.2",
+              "1.6"
+            ],
+            "samples_incomplete": true
+          },
+          "A13": {
+            "type": "REAL",
+            "pk": false,
+            "description": "unemployment rate 1996",
+            "documented_examples": "[0.43, 1.85]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "0.43",
+              "1.85"
+            ],
+            "samples_incomplete": true
+          },
+          "A14": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "no. of entrepreneurs per 1000 inhabitants",
+            "documented_examples": "[167, 132]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "167",
+              "132"
+            ],
+            "samples_incomplete": true
+          },
+          "A15": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "no. of committed crimes 1995",
+            "documented_examples": "[85677, 2159]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "85677",
+              "2159"
+            ],
+            "samples_incomplete": true
+          },
+          "A16": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "no. of committed crimes 1996",
+            "documented_examples": "[99107, 2674]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "99107",
+              "2674"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": []
+      },
+      "loan": {
+        "columns": {
+          "loan_id": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "the id number identifying the loan data",
+            "documented_examples": "[4959, 4961]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "4959",
+              "4961"
+            ],
+            "samples_incomplete": true
+          },
+          "account_id": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "the id number identifying the account",
+            "documented_examples": "[2, 19]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "2",
+              "19"
+            ],
+            "samples_incomplete": true
+          },
+          "date": {
+            "type": "DATE",
+            "pk": false,
+            "description": "the date when the loan is approved",
+            "documented_examples": "['1994-01-05', '1996-04-29']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1994-01-05",
+              "1996-04-29"
+            ],
+            "samples_incomplete": true
+          },
+          "amount": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "approved amount",
+            "documented_examples": "[80952, 30276]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "80952",
+              "30276"
+            ],
+            "samples_incomplete": true
+          },
+          "duration": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "loan duration",
+            "documented_examples": "[24, 12]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "24",
+              "12"
+            ],
+            "samples_incomplete": true
+          },
+          "payments": {
+            "type": "REAL",
+            "pk": false,
+            "description": "monthly payments",
+            "documented_examples": "[3373.0, 2523.0]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "3373.0",
+              "2523.0"
+            ],
+            "samples_incomplete": true
+          },
+          "status": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "repayment status",
+            "documented_examples": "['A', 'B']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "A",
+              "B"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "account_id",
+            "table": "account",
+            "target": "account_id"
+          }
+        ]
+      },
+      "order": {
+        "columns": {
+          "order_id": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "identifying the unique order",
+            "documented_examples": "[29401, 29402]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "29401",
+              "29402"
+            ],
+            "samples_incomplete": true
+          },
+          "account_id": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "id number of account",
+            "documented_examples": "[1, 2]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "2"
+            ],
+            "samples_incomplete": true
+          },
+          "bank_to": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "bank of the recipient",
+            "documented_examples": "['YZ', 'ST']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "YZ",
+              "ST"
+            ],
+            "samples_incomplete": true
+          },
+          "account_to": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "account of the recipient",
+            "documented_examples": "[87144583, 89597016]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "87144583",
+              "89597016"
+            ],
+            "samples_incomplete": true
+          },
+          "amount": {
+            "type": "REAL",
+            "pk": false,
+            "description": "debited amount",
+            "documented_examples": "[2452.0, 3372.7]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "2452.0",
+              "3372.7"
+            ],
+            "samples_incomplete": true
+          },
+          "k_symbol": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "purpose of the payment",
+            "documented_examples": "['SIPO', 'UVER']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "SIPO",
+              "UVER"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "account_id",
+            "table": "account",
+            "target": "account_id"
+          }
+        ]
+      },
+      "trans": {
+        "columns": {
+          "trans_id": {
+            "type": "INTEGER",
+            "pk": true,
+            "description": "transaction id",
+            "documented_examples": "[1, 5]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1",
+              "5"
+            ],
+            "samples_incomplete": true
+          },
+          "account_id": {
+            "type": "INTEGER",
+            "pk": false,
+            "documented_examples": "[1]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1"
+            ],
+            "samples_incomplete": true
+          },
+          "date": {
+            "type": "DATE",
+            "pk": false,
+            "description": "date of transaction",
+            "documented_examples": "['1995-03-24', '1995-04-13']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1995-03-24",
+              "1995-04-13"
+            ],
+            "samples_incomplete": true
+          },
+          "type": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "+/- transaction",
+            "documented_examples": "['PRIJEM']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "PRIJEM"
+            ],
+            "samples_incomplete": true
+          },
+          "operation": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "mode of transaction",
+            "documented_examples": "['VKLAD', 'PREVOD Z UCTU']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "VKLAD",
+              "PREVOD Z UCTU"
+            ],
+            "samples_incomplete": true
+          },
+          "amount": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "amount of money",
+            "documented_examples": "[1000, 3679]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1000",
+              "3679"
+            ],
+            "samples_incomplete": true
+          },
+          "balance": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "balance after transaction",
+            "documented_examples": "[1000, 4679]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              "1000",
+              "4679"
+            ],
+            "samples_incomplete": true
+          },
+          "k_symbol": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "characterization of the transaction",
+            "documented_examples": "[]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              null
+            ],
+            "samples_incomplete": true
+          },
+          "bank": {
+            "type": "TEXT",
+            "pk": false,
+            "description": "bank of the partner",
+            "documented_examples": "['AB']",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              null,
+              "AB"
+            ],
+            "samples_incomplete": true
+          },
+          "account": {
+            "type": "INTEGER",
+            "pk": false,
+            "description": "account of the partner",
+            "documented_examples": "[41403269]",
+            "documentation_source": "https://huggingface.co/datasets/birdsql/bird_mini_dev/resolve/5b256b5a9c17478f06ed6912612e9a14d17065c8/baseline_inference/schemas/sqlite.json",
+            "observed_samples": [
+              null,
+              "41403269"
+            ],
+            "samples_incomplete": true
+          }
+        },
+        "foreign_keys": [
+          {
+            "column": "account_id",
+            "table": "account",
+            "target": "account_id"
+          }
+        ]
+      }
+    }
+  },
+  "472": {
+    "source": "output\\issue123-deepseek-diagnostic100-part2-20261111\\q472",
+    "question": {
+      "question_id": "472",
+      "db_id": "toxicology",
+      "question": "Among carcinogenic molecules, what percentage contain no fluorine atoms? Round to two decimal places.",
+      "evidence": "A '+' carcinogenicity label means carcinogenic."
+    },
+    "result": {
+      "semantic_status": "requirements_unverified",
+      "semantic_metrics": {
+        "outcome": "invalid_output_requirements",
+        "sql_changed": false,
+        "elapsed_seconds": 2.255381099996157
+      },
+      "elapsed_seconds": 7.180351299990434
+    },
+    "events": [
+      {
+        "event": "output_requirements_started",
+        "run_id": "q472",
+        "question_id": "472",
+        "models": {
+          "selector": "deepseek-flash",
+          "decomposer": "deepseek-flash",
+          "refiner": "deepseek-flash"
+        },
+        "role": "refiner",
+        "candidate_sql_visible": false,
+        "question_hash": "645d027e664f6768984ee68181a502052c8dd7ad381aa18c1d0a9ab87747b155",
+        "trace_schema_version": 2,
+        "event_sequence": 35,
+        "timestamp": "2026-11-11T07:22:15.261771+00:00",
+        "elapsed": 4.688352999990457
+      },
+      {
+        "event": "output_requirements_error",
+        "run_id": "q472",
+        "question_id": "472",
+        "models": {
+          "selector": "deepseek-flash",
+          "decomposer": "deepseek-flash",
+          "refiner": "deepseek-flash"
+        },
+        "code": "invalid_output_requirements",
+        "error": "Entity outputs need a representation decision; attributes/measures use not_applicable",
+        "sql_preserved": true,
+        "trace_schema_version": 2,
+        "event_sequence": 39,
+        "timestamp": "2026-11-11T07:22:17.515341+00:00",
+        "elapsed": 6.942325700001675
+      }
+    ]
+  }
+}

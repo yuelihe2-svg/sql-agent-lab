@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sql-agent-lab"
+version = "0.1.0"
+description = "Three-role LangGraph SQLite agent with a local workflow observatory"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["langgraph==1.2.19", "httpx==0.28.1", "sqlglot==30.31.0"]
+
+[project.optional-dependencies]
+dev = ["pytest==9.2.0"]
+
+[project.scripts]
+sql-agent-ui = "sql_agent_lab.macsql.live_ui:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"sql_agent_lab.macsql" = ["*.html", "fixtures/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "src/sql_agent_lab/macsql"]
+addopts = "-ra"
