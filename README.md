@@ -6,6 +6,8 @@ SQL Agent Lab 是一个三角色、只读 SQLite 问答应用。LangGraph 组织
 
 独立研究模式：[MAC-SQL 原方法复现说明](docs/experiments/macsql-reproduction.zh-CN.md)。该模式固定官方源码版本，使用原版提示词和 BIRD 角色规则，提供无模型回放；不改变这里描述的网页默认工作流。
 
+已完成的同题实验：[原方法复现模式与 A/B/C 的 50 题中文对照报告](docs/experiments/2026-11-16-macsql-reproduction.zh-CN.md)。
+
 ## 安装与离线检查
 
 协作者先克隆仓库并进入项目目录，再创建自己的 Python 环境；不要复制他人的 `.venv` 或本机配置。前端离线检查还需要安装 Node.js。数据库和模型不随仓库提供；可以先运行下面的离线测试或无模型页面预览，再配置自己的 SQLite 数据源。
