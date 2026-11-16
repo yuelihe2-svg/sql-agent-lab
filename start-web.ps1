@@ -8,8 +8,10 @@ if (-not (Test-Path -LiteralPath $Config)) {
 }
 $settings = Get-Content -LiteralPath $Config -Raw | ConvertFrom-Json
 $python = Join-Path $PSScriptRoot '.venv/Scripts/python.exe'
-$launchArgs = @('-B', '-m', 'sql_agent_lab.macsql.live_ui', '--data-dir', $settings.data_dir,
+$launchArgs = @('-B', '-m', 'sql_agent_lab.macsql.live_ui',
     '--output-dir', $settings.output_dir, '--port', "$Port")
+if ($settings.data_dir) { $launchArgs += @('--data-dir', $settings.data_dir) }
+if ($settings.sources) { $launchArgs += @('--sources', $settings.sources) }
 if ($settings.metadata) { $launchArgs += @('--metadata', $settings.metadata) }
 if ($settings.analysis_dir) { $launchArgs += @('--analysis-dir', $settings.analysis_dir) }
 if ($settings.history) { $launchArgs += @('--history', $settings.history) }

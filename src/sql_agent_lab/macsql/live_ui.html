@@ -1,13 +1,14 @@
 <!doctype html>
 <html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AgentOpt • 工作流观察台</title>
+<title>SQL Agent Lab · 开发者观察台</title>
 <style>
 :root{--ink:#172c46;--muted:#617086;--line:#dce4ed;--blue:#245ee7;--bg:#f3f6fa;--green:#067a5a;--red:#b43845}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 'Segoe UI','Microsoft YaHei','PingFang SC',Arial,sans-serif}button,select,textarea{font:inherit}button,select{cursor:pointer}button:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid #91b4ff;outline-offset:2px}header{height:74px;background:white;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 30px}.brand{font-size:20px;font-weight:700}.brand b{background:var(--blue);color:white;border-radius:9px;padding:8px;margin-right:10px}.sub{color:var(--muted);font-size:13px}.badge{padding:5px 10px;border-radius:20px;background:#e8efff;color:#244c9c;font-size:12px}.shell{display:grid;grid-template-columns:300px minmax(0,1fr);min-height:calc(100vh - 74px)}aside{background:#fff;padding:24px 20px;border-right:1px solid var(--line)}h1{font-size:29px;letter-spacing:-.7px;margin:0}h2{font-size:16px;margin:0 0 12px}label{display:block;font-weight:600;margin:17px 0 6px}select,textarea{width:100%;border:1px solid #c8d3e0;border-radius:7px;background:white;color:var(--ink);padding:9px}textarea{height:125px;resize:vertical}button{border:1px solid #c8d3e0;background:white;color:var(--ink);border-radius:7px;padding:9px 14px}button.primary{background:var(--blue);color:white;border-color:var(--blue);font-weight:600;width:100%;margin-top:16px}button:disabled{opacity:.5;cursor:default}.toggle{display:flex;gap:8px;align-items:center;font-size:13px;font-weight:400}.help{font-size:12px;color:var(--muted)}.divider{border-top:1px solid var(--line);margin:24px 0}.runs button{display:block;text-align:left;width:100%;margin-bottom:8px;font-size:12px;overflow-wrap:anywhere}.runs button.selected{border-color:var(--blue);background:#edf3ff}main{padding:26px 30px;min-width:0}.title{display:flex;align-items:center;justify-content:space-between;gap:15px}.question{font-size:17px;max-width:1000px;margin:18px 0 8px}.pipeline{display:flex;gap:0;margin:25px 0;background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden}.stage{flex:1;padding:15px;border-right:1px solid var(--line)}.stage:last-child{border:0}.stage strong{display:block}.stage small{color:var(--muted)}.stage.live{background:#eaf1ff;border-bottom:3px solid var(--blue)}.stage.done{border-bottom:3px solid #43a48a}.metrics{display:grid;grid-template-columns:repeat(4,1fr);margin:0 0 22px;gap:16px}.metric{border-left:3px solid #cbd7e7;padding-left:13px}.metric span{display:block;font-size:12px;color:var(--muted)}.metric b{font-size:22px;font-weight:600}.workspace{display:grid;grid-template-columns:minmax(280px, .85fr) minmax(350px,1.3fr);border:1px solid var(--line);border-radius:10px;background:white;overflow:hidden}.trace{border-right:1px solid var(--line)}.panelhead{padding:16px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}.panelhead select{width:130px;padding:4px}.events{height:430px;overflow:auto;padding:10px}.event{width:100%;display:flex;gap:12px;text-align:left;border:0;border-radius:6px;margin:2px 0;padding:10px;background:transparent}.event:hover,.event.chosen{background:#edf3ff}.event .icon{color:var(--blue);background:#eaf0fc;border-radius:5px;width:26px;height:26px;display:grid;place-items:center;flex:none}.event .meta{color:var(--muted);font-size:11px}.event .name{font-weight:600;font-size:13px}.detail{min-width:0}.detailbody{height:430px;overflow:auto;padding:18px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.65 Consolas,monospace;background:#f5f7fa;padding:15px;border-radius:7px;margin:8px 0 18px}pre.sql{background:#172c46;color:#e3edff}details{margin-bottom:12px}summary{cursor:pointer;font-weight:600}.result{margin-top:20px;background:white;border:1px solid var(--line);border-radius:10px;padding:20px}.result h2{display:flex;justify-content:space-between}.good{color:var(--green)}.bad{color:var(--red)}.notice{padding:12px;background:#fff4dc;color:#725217;border-radius:7px;margin:14px 0}.hidden{display:none!important}table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line)}th{background:#f3f6fa}.scroll{overflow:auto}footer{font-size:12px;color:var(--muted);margin-top:22px}#error{color:var(--red);white-space:pre-wrap}a{color:var(--blue)}@media(max-width:1100px){.shell{grid-template-columns:260px 1fr}main{padding:22px 18px}.workspace{grid-template-columns:1fr}.trace{border-right:0}.events{height:250px}.detailbody{height:330px}}@media(max-width:700px){header{padding:12px;height:auto}.shell{display:block}aside{border-right:0}.metrics{grid-template-columns:1fr 1fr}.pipeline{flex-wrap:wrap}.stage{flex:1 0 45%}.title{align-items:flex-start}.runs{max-height:140px;overflow:auto}}
 </style>
-<header><div class="brand"><b>A</b>AgentOpt <span class="sub">/ 工作流观察台</span></div><a href="/analysis">逐题错误分析表</a><span id="modelBadge" class="badge">本地 Qwen · SQLite 只读访问</span></header>
+<header><div class="brand"><b>S</b>SQL Agent Lab <span class="sub">/ 开发者观察台</span></div><a href="/">返回数据问答</a><a href="/analysis">逐题错误分析表</a><span id="modelBadge" class="badge">本地 Qwen · SQLite 只读访问</span></header>
 <div class="shell"><aside><h2>新建本地运行</h2><div class="sub">查看已保存记录，请使用下方运行历史或右侧题目表。</div>
-<label for="mode">题目来源</label><select id="mode"><option value="benchmark">BIRD Mini-Dev</option value="custom">自定义问题</option></select>
-<label for="db">数据库</label><select id="db"></select><div class="help">每次运行使用一个数据库，模型在其中筛选表和字段。</div>
+<label for="mode">运行方式</label><select id="mode"><option value="custom">数据库问答</option><option value="benchmark">BIRD 题库评测</option></select>
+<label for="db">数据源</label><select id="db"></select><div class="help">从后端配置的数据源中选择一个 SQLite 数据库，只读查询。</div>
+<div id="sourceHelp" class="help"></div>
 <div id="benchmark"><label for="qid">评测题目</label><select id="qid"></select></div>
 <label for="question">问题内容</label><textarea id="question"></textarea>
 <label class="toggle"><input id="retrieval" type="checkbox" checked> 检索字段说明与数据取值</label>
@@ -20,7 +21,8 @@
 <section id="evaluationEvidence" class="result" aria-label="独立评测证据"></section>
 <section id="pairedSummary" class="result hidden" aria-label="本次固定 SQL 复核对比"></section>
 <section id="batchPanel" class="result hidden" aria-label="已保存的 API 测试汇总"></section>
-<div id="questionTitle" class="question">请选择一道题目开始。</div><div><span id="status" class="badge">就绪</span> <span id="database" class="sub"></span></div>
+<div id="questionTitle" class="question">请输入问题或选择评测题开始。</div><div><span id="status" class="badge">就绪</span> <span id="database" class="sub"></span></div>
+<p id="taskMeta" class="help" aria-live="polite"></p><p id="taskProblem" class="bad hidden" role="status"></p>
 <div id="notice" class="notice hidden"></div>
 <div class="pipeline"><div class="stage" id="stage-schema"><strong>结构读取与筛选</strong><small>Selector · 筛选相关表和字段</small></div><div class="stage" id="stage-decomposer"><strong>问题分解</strong><small>Decomposer · 分解问题并生成 SQL</small></div><div class="stage" id="stage-execute"><strong>SQLite 工具</strong><small>检查语法并只读执行</small></div><div class="stage" id="stage-refiner"><strong>检查与修复</strong><small>Refiner · 根据执行反馈修复</small></div></div>
 <div class="stage" id="stage-semantic" style="background:white;border:1px solid var(--line);border-radius:8px;margin-bottom:18px"><strong>语义复核 · Refiner</strong><small id="semantic-state">按需开启，逐项核对题意与 SQL</small></div>
@@ -28,7 +30,7 @@
 <section class="result" style="margin-bottom:20px"><h2>角色输出</h2><div id="roleOutputs" style="display:flex;flex-wrap:wrap;gap:12px"></div></section>
 <div class="workspace"><section class="trace"><div class="panelhead"><strong>执行轨迹</strong><select id="filter" aria-label="筛选事件"><option value="all">全部事件</option><option value="tool">工具调用</option><option value="call">模型调用</option></select></div><div id="events" class="events" aria-live="polite"></div></section><section class="detail"><div class="panelhead"><strong id="detailTitle">事件详情</strong><span class="sub">输入 / 输出</span></div><div id="detail" class="detailbody">点击左侧事件，查看实际记录的输入与输出。</div></section></div>
 <section id="reviewPanel" class="result hidden"><h2>语义检查过程</h2><h3>① 独立提取返回要求</h3><div id="independentRequirements"></div><h3>② 根据固定要求检查 SQL</h3><p id="independentReviewState"></p><details><summary>schema 外键引用来源</summary><div id="schemaReferences"></div></details><h3>返回列逐列检查</h3><div id="outputColumns"></div><p id="reviewState"></p><div id="reviewChecks" class="scroll"></div><details id="reviewSql"><summary>复核前后的 SQL</summary><p>复核前</p><pre id="beforeSql" class="sql"></pre><p>复核建议</p><pre id="afterSql" class="sql"></pre></details><p id="reviewComparison" class="help"></p><p class="help">这是模型给出的检查意见，不等同于正确性证明。复核不会读取参考 SQL；建议修改须通过只读编译和执行检查。回复无效或建议无法执行时保留原 SQL，并标记未解决。</p></section>
-<section id="result" class="result hidden"><h2>最终 SQL 与执行结果 <span id="resultStatus"></span></h2><pre id="sql" class="sql"></pre><div id="resultError" class="bad"></div><div id="rows" class="scroll"></div><p class="help">这里只展示有限行数的结果预览。评测会比较完整结果集合，忽略行顺序与重复行。</p></section>
+<section id="result" class="result hidden"><h2>最终 SQL 与执行结果 <span id="resultStatus"></span></h2><pre id="sql" class="sql"></pre><div id="resultError" class="bad"></div><div id="rows" class="scroll"></div><p class="help">这里只展示有限行数的结果预览。仅题库评测会比较完整结果集合，忽略行顺序与重复行；普通问答不做标准答案评分。</p></section>
 <footer>页面每秒刷新。工具由工作流按阶段调用，当前不由模型自由选择。停止为协作式操作，会等待当前请求完成。 <span id="connection"></span></footer>
 </main></div>
 <script>
@@ -68,9 +70,18 @@ function text(tag,value,cls){let n=document.createElement(tag);n.textContent=val
 function options(el,items){el.replaceChildren(...items.map(([value,label])=>{let o=text('option',label);o.value=value;return o}))}
 function questions(){let list=catalog.questions.filter(q=>q.db_id===$('db').value);options($('qid'),list.map(q=>[q.question_id,'#'+q.question_id+' '+q.question.slice(0,55)]));fillQuestion()}
 function fillQuestion(){if($('mode').value==='benchmark'){$('question').value=catalog.questions.find(q=>q.question_id===$('qid').value)?.question||''}}
-$('db').onchange=questions;$('qid').onchange=fillQuestion;$('mode').onchange=()=>{$('benchmark').classList.toggle('hidden',$('mode').value==='custom');$('question').readOnly=$('mode').value==='benchmark';if($('mode').value==='custom')$('question').value='';else fillQuestion()};
-$('start').onclick=async()=>{try{$('error').textContent='';$('start').disabled=true;let p={retrieval:$('retrieval').checked,semantic_review:$('semantic').checked};if($('mode').value==='benchmark')p.question_id=$('qid').value;else Object.assign(p,{question:$('question').value,db_id:$('db').value});let r=await api('/api/start',p);current=r.id;selected=-1;lastVersion='';await refresh()}catch(e){$('error').textContent=explainError(e.message);$('start').disabled=false}};
-$('stop').onclick=async()=>{try{await api('/api/stop',{});$('stop').disabled=true;$('notice').textContent='已请求停止，正在等待当前操作完成。';$('notice').classList.remove('hidden')}catch(e){$('error').textContent=explainError(e.message)}};
+function configureSources(){
+const benchmark=$('mode').value==='benchmark',previous=$('db').value;
+const sources=catalog.sources||catalog.databases.map(id=>({id,name:id}));
+const available=benchmark?sources.filter(s=>catalog.questions.some(q=>q.db_id===s.id)):sources;
+options($('db'),available.map(s=>[s.id,s.name]));if(available.some(s=>s.id===previous))$('db').value=previous;
+$('benchmark').classList.toggle('hidden',!benchmark);$('question').readOnly=benchmark;
+$('sourceHelp').textContent=benchmark?'评测会单独执行参考 SQL；参考答案不会交给 Agent。':'输入自己的问题。此模式没有参考答案，执行成功后仍显示“未评测”。';
+if(!benchmark)$('question').value='';questions();
+}
+$('db').onchange=questions;$('qid').onchange=fillQuestion;$('mode').onchange=configureSources;
+$('start').onclick=async()=>{pendingAction=true;refreshVersion++;$('start').disabled=true;$('stop').disabled=true;try{$('error').textContent='';let p={retrieval:$('retrieval').checked,semantic_review:$('semantic').checked};if($('mode').value==='benchmark')p.question_id=$('qid').value;else Object.assign(p,{question:$('question').value,db_id:$('db').value});let r=await api('/api/start',p);current=r.id;selected=-1;lastVersion=''}catch(e){$('error').textContent=explainError(e.message)}finally{pendingAction=false;refreshVersion++;await refresh()}};
+$('stop').onclick=async()=>{pendingAction=true;refreshVersion++;$('start').disabled=true;$('stop').disabled=true;try{$('error').textContent='';await api('/api/stop',{id:current})}catch(e){$('error').textContent=explainError(e.message)}finally{pendingAction=false;refreshVersion++;await refresh()}};
 function showDetail(i){selected=i;let e=events[i];if(!e)return;if(e.tool_call_id&&e.event!=='tool_started')e={...events.find(x=>x.event==='tool_started'&&x.tool_call_id===e.tool_call_id),...e};if(e.call_id&&e.event!=='call_started')e={...events.find(x=>x.event==='call_started'&&x.call_id===e.call_id),...e};$('detailTitle').textContent=toolNames[e.tool]||(e.purpose==='output_requirements'?'Refiner · 独立提取要求':e.purpose==='semantic_review'?'Refiner · SQL 复核':roles[e.role])||labels[e.event]||e.event;let area=$('detail');area.replaceChildren();if(e.event==='schema_selected')area.append(text('p',e.selector_invoked?'已调用 Selector 模型筛选表和字段。':'完整数据库结构可放入上下文，因此跳过了 Selector 模型调用。'));for(let key of ['input','output','messages','response','reasoning','sql','feedback','matches','value_lookups','selected_schema','schema','error','report','old_sql']){if(e[key]!==undefined){let d=document.createElement('details');d.open=!['schema','selected_schema','messages'].includes(key);d.append(text('summary',fieldNames[key]||key),text('pre',typeof e[key]==='string'?e[key]:JSON.stringify(e[key],null,2),key==='sql'?'sql':''));area.append(d)}}let meta={...e};for(let key of ['input','output','messages','response','reasoning','sql','feedback','matches','value_lookups','selected_schema','schema'])delete meta[key];let d=document.createElement('details');d.append(text('summary','事件元数据'),text('pre',JSON.stringify(meta,null,2)));area.append(d);drawEvents()}
 function diagnosticLabel(e){
 const f=e.feedback||{},code=e.code||e.error_type||f.identifier_kind||f.error_type;
@@ -151,13 +162,46 @@ const checked=es.find(e=>e.event==='semantic_requirements_checked');return check
 }
 function renderEvaluationEvidence(run){
 const area=$('evaluationEvidence');area.replaceChildren(text('h2','独立评测证据（不进入模型上下文）'));
+if(run.manifest?.benchmark===false){area.replaceChildren(text('h2','答案验证'),text('p','本次是数据库问答，没有参考答案，未进行正确性评测。SQL 执行成功不代表已经理解了业务含义。'));return;}
 const evidence=run.evaluation_evidence;
 if(!evidence){area.append(text('p',run.result?'此历史记录没有保存完整结果差异摘要；未重新执行 SQL 补算。':'模型运行结束后再生成评测证据。'));return;}
 area.append(text('p','评分规则：完整结果行集合比较，忽略行顺序和重复行。数据库指纹：'+evidence.database_sha256));
 for(const c of evidence.comparisons||[]){const d=document.createElement('details');d.append(text('summary',({baseline:'原 SQL',submitted:'最终 SQL',suggestion:'建议 SQL'})[c.label]+'：'+(c.score==null?'评测未完成':c.score===1?'正确':'错误')+(c.candidate_reused?' · 复用相同查询结果':'')),text('p','标准结果：'+(c.reference?.column_count??'未知')+' 列 / '+(c.reference?.unique_row_count??'未知')+' 个不同结果行；候选结果：'+(c.candidate?.column_count??'未知')+' 列 / '+(c.candidate?.unique_row_count??'未知')+' 个不同结果行'),text('pre',JSON.stringify(c,null,2)));area.append(d);}
 }
-function render(run){renderEvaluationEvidence(run);renderReview(run);events=run.events;let q=run.manifest.question,r=run.result; $('questionTitle').textContent=q.question;$('database').textContent=q.db_id+' / 题目 '+q.question_id;$('status').textContent=run.active?'正在实时运行':run.historical?'历史运行记录':states[r?.status]||(run.manifest.mode==='paired_candidate_audit'?'配对复核：等待最终结果':'运行中断 / 暂无最终结果');$('notice').classList.toggle('hidden',!run.historical&&!run.stop_requested);if(run.manifest.mode==='paired_candidate_audit'){$('notice').classList.remove('hidden');$('notice').textContent='固定历史候选 SQL 的配对复核；本次仅运行语义检查，未重新生成上游 SQL。';}else if(run.historical)$('notice').textContent='这是已完成的真实推理历史记录。旧版记录包含工作流反馈，但没有逐次工具调用的时间信息。';else if(run.stop_requested)$('notice').textContent='已请求停止，正在等待当前操作完成。';
-let completed=events.filter(e=>e.event==='call_completed'),failed=events.filter(e=>e.event==='call_failed'),received=[...completed,...failed],started=events.filter(e=>e.event==='call_started');$('calls').textContent=started.length+'（完成 '+completed.length+' / 失败 '+failed.length+'）';$('tokens').textContent=received.reduce((s,e)=>s+(e.input_tokens||0),0).toLocaleString()+' / '+received.reduce((s,e)=>s+(e.output_tokens||0),0).toLocaleString()+(failed.some(e=>!e.usage_complete)?'（部分用量未知）':'');$('elapsed').textContent=r?Number(r.elapsed_seconds).toFixed(1)+' 秒':run.manifest.created_at?((Date.now()-Date.parse(run.manifest.created_at))/1000).toFixed(1)+' 秒':'—';$('score').textContent=r?.score==null?'未评分':r.score===1?'正确':'错误';$('score').className=r?.score===1?'good':r?.score===0?'bad':'';
+function taskPresentation(run){
+// Task lifecycle is separate from SQL checks and answer scores.
+const legacy={completed:'completed',needs_review:'completed',failed:'failed',evaluation_failed:'failed',stopped:'stopped'};
+const task=run.task||{state:run.active?(run.stop_requested?'stopping':'running'):(legacy[run.result?.status]||'unknown')};
+const names={running:'运行中',stopping:'停止中',completed:'已完成',failed:'失败',stopped:'已停止',interrupted:'已中断',unknown:'状态未记录'};
+const stages={preparing:'准备数据与模型',schema:'读取与检索结构',selector:'筛选表和字段',decomposer:'生成 SQL',execute:'执行与检查 SQL',refiner:'修复 SQL',requirements:'提取返回要求',semantic_review:'语义复核',evaluation:'独立评测',finalizing:'整理结果',finished:'已结束'};
+return {task,label:names[task.state]||'状态未记录',stage:stages[task.stage]||'阶段未记录',canStop:!!run.active&&task.state==='running'};
+}
+function renderTask(run){
+const view=taskPresentation(run),task=view.task;
+$('status').textContent=view.label;
+$('stop').disabled=!view.canStop;
+const date=value=>value?new Date(value).toLocaleString('zh-CN'):'未记录';
+$('taskMeta').textContent='任务：'+run.id+' · '+view.stage+' · 开始：'+date(task.started_at)+' · 结束：'+date(task.ended_at);
+const notes=[];
+if(task.state==='stopping')notes.push('已请求停止，正在等待当前操作完成；尚未结束。');
+if(task.state==='interrupted')notes.push('服务中断，任务未保存最终结果；准确结束时间未知，未自动重跑。');
+else if(task.error)notes.push('结束原因：'+task.error);
+if(task.persistence_error)notes.push('状态文件保存失败：'+task.persistence_error+'；当前显示来自服务内存。');
+$('taskProblem').textContent=notes.join(' ');
+$('taskProblem').classList.toggle('hidden',!notes.length);
+}
+function taskElapsed(run){
+if(Number.isFinite(run.result?.elapsed_seconds))return run.result.elapsed_seconds.toFixed(1)+' 秒';
+const task=taskPresentation(run).task;
+if(run.active&&['running','stopping'].includes(task.state)){
+const start=Date.parse(task.started_at||run.manifest.created_at);
+if(Number.isFinite(start))return Math.max(0,(Date.now()-start)/1000).toFixed(1)+' 秒';
+}
+if(task.started_at&&task.ended_at)return Math.max(0,(Date.parse(task.ended_at)-Date.parse(task.started_at))/1000).toFixed(1)+' 秒';
+return '—';
+}
+function render(run){renderEvaluationEvidence(run);renderReview(run);renderTask(run);events=run.events;let q=run.manifest.question,r=run.result; $('questionTitle').textContent=q.question;$('database').textContent=q.db_id+' / 题目 '+q.question_id;$('notice').classList.toggle('hidden',!run.historical&&!run.stop_requested);if(run.manifest.mode==='paired_candidate_audit'){$('notice').classList.remove('hidden');$('notice').textContent='固定历史候选 SQL 的配对复核；本次仅运行语义检查，未重新生成上游 SQL。';}else if(run.historical)$('notice').textContent='这是已保存的真实推理历史记录。旧版记录包含工作流反馈，但可能缺少任务状态或逐次工具调用的时间信息。';else if(run.stop_requested)$('notice').textContent='已请求停止，正在等待当前操作完成。';
+let completed=events.filter(e=>e.event==='call_completed'),failed=events.filter(e=>e.event==='call_failed'),received=[...completed,...failed],started=events.filter(e=>e.event==='call_started');$('calls').textContent=started.length+'（完成 '+completed.length+' / 失败 '+failed.length+'）';$('tokens').textContent=received.reduce((s,e)=>s+(e.input_tokens||0),0).toLocaleString()+' / '+received.reduce((s,e)=>s+(e.output_tokens||0),0).toLocaleString()+(failed.some(e=>!e.usage_complete)?'（部分用量未知）':'');$('elapsed').textContent=taskElapsed(run);$('score').textContent=r?.score==null?(run.manifest.benchmark===false?'未评测（无参考答案）':'未评分'):r.score===1?'正确':'错误';$('score').className=r?.score===1?'good':r?.score===0?'bad':'';
 for(let s of ['schema','decomposer','execute','refiner'])$('stage-'+s).className='stage';if(events.some(e=>e.event==='schema_selected'))$('stage-schema').classList.add('done');for(let role of ['decomposer','refiner'])if(completed.some(e=>e.role===role))$('stage-'+role).classList.add('done');if(events.some(e=>e.event==='execution'))$('stage-execute').classList.add('done');let pending=events.filter(e=>e.event==='call_started'&&!completed.some(c=>c.call_id===e.call_id)).at(-1);if(run.active&&pending)$('stage-'+(pending.role==='selector'?'schema':pending.role)).classList.add('live');
 let version=run.id+':'+events.length+':'+Boolean(r);if(version!==lastVersion){lastVersion=version;drawEvents();if(selected<0&&events.length)showDetail(events.length-1)}$('result').classList.toggle('hidden',!r);if(r){$('sql').textContent=r.sql||'未生成最终 SQL';$('resultStatus').textContent=r.feedback?.status==='ok'?'执行成功':(states[r.status]||r.status);$('resultStatus').className=r.feedback?.status==='ok'?'good':'bad';$('resultError').textContent=r.error?explainError(r.error):'';$('rows').replaceChildren();if(r.feedback?.columns){let t=document.createElement('table'),head=document.createElement('tr');r.feedback.columns.forEach(v=>head.append(text('th',v)));t.append(head);for(let row of r.feedback.preview_rows||[]){let tr=document.createElement('tr');row.forEach(v=>tr.append(text('td',v===null?'NULL':v)));t.append(tr)}$('rows').append(t)}}}
 function answerLabel(score){return score==null?'未评分':score===1?'正确':'错误'}
@@ -206,6 +250,28 @@ if(!replies.length&&run.manifest.mode==='paired_candidate_audit'&&role!=='refine
 if(!replies.length){let schema=run.events.find(e=>e.event==='schema_selected');card.append(text('p',role==='selector'&&schema?.selector_invoked===false?'未调用模型：完整 schema 可放入上下文。':'没有已完成的模型回复。','help'));if(role==='selector'&&schema){let b=text('button','查看结构筛选决策');b.onclick=()=>{showDetail(run.events.indexOf(schema));$('detailTitle').scrollIntoView({block:'center'})};card.append(b)}}
 for(let {e,i} of replies){let title=e.purpose==='output_requirements'?'① 独立提取要求':e.purpose==='semantic_review'?'② SQL 复核':role==='refiner'?'SQL / 类型修复':'模型回复';let b=text('button',title+' · '+(e.event==='call_completed'?'已收到':'失败'));b.style.cssText='display:block;margin-top:10px';b.onclick=()=>{showDetail(i);$('detailTitle').scrollIntoView({block:'center'})};card.append(b)}area.append(card)}
 }
-async function refresh(){try{let list=await api('/api/runs');active=list.active;renderBatches(list.batches||[]);list.runs.sort((a,b)=>Number(!!b.recorded)-Number(!!a.recorded)||Number(a.id.startsWith('history-'))-Number(b.id.startsWith('history-'))||b.id.localeCompare(a.id));if(!current)current=list.active||list.batches?.[0]?.rows[0]?.id||list.runs[0]?.id;$('start').disabled=!!active;$('stop').disabled=!active||current!==active;$('runs').replaceChildren();for(let r of list.runs){let b=text('button',(r.model==='deepseek-flash'?(r.id.startsWith('semantic-pilot-')?'DeepSeek 语义复核 · ':'DeepSeek · '):r.id.startsWith('history-')?'历史 · ':r.id.startsWith('semantic-pilot-')?'语义对比 · ':'完整流程 · ')+'#'+r.question.question_id+' '+r.question.db_id+(r.recorded?' · '+answerLabel(r.score):''));b.className=r.id===current?'selected':'';b.onclick=()=>chooseRun(r.id);$('runs').append(b)}if(current){let run=await api('/api/run?id='+encodeURIComponent(current));await loadColumnHistory();render(run);renderRecordExtras(run)}$('connection').textContent='已连接';}catch(e){$('connection').textContent='连接不可用：'+explainError(e.message)}}
-async function init(){try{catalog=await api('/api/catalog');options($('db'),catalog.databases.map(d=>[d,d]));questions();$('qid').value='2';fillQuestion();$('question').readOnly=true;await refresh();setInterval(refresh,1000)}catch(e){$('error').textContent=explainError(e.message)}}init();
+let refreshing=false;
+let pendingAction=false,refreshVersion=0;
+async function refresh(){
+// A start/stop action invalidates older polls, even when the selected ID is unchanged.
+if(refreshing||pendingAction)return;
+refreshing=true;
+const version=refreshVersion;
+try{
+let list=await api('/api/runs');
+if(version!==refreshVersion)return;
+active=list.active;renderBatches(list.batches||[]);
+list.runs.sort((a,b)=>Number(!!b.recorded)-Number(!!a.recorded)||Number(a.id.startsWith('history-'))-Number(b.id.startsWith('history-'))||b.id.localeCompare(a.id));
+if(!current)current=list.active||list.batches?.[0]?.rows[0]?.id||list.runs[0]?.id;
+$('start').disabled=!!active;
+const selectedRun=list.runs.find(r=>r.id===current);
+$('stop').disabled=!active||current!==active||selectedRun?.task?.state==='stopping';
+$('runs').replaceChildren();
+for(let r of list.runs){let b=text('button',(r.model==='deepseek-flash'?(r.id.startsWith('semantic-pilot-')?'DeepSeek 语义复核 · ':'DeepSeek · '):r.id.startsWith('history-')?'历史 · ':r.id.startsWith('semantic-pilot-')?'语义对比 · ':'完整流程 · ')+'#'+r.question.question_id+' '+r.question.db_id+' · '+taskPresentation({task:r.task,active:r.id===active,result:r}).label+(r.recorded?' · '+answerLabel(r.score):''));b.className=r.id===current?'selected':'';b.onclick=()=>chooseRun(r.id);$('runs').append(b)}
+if(current){const requested=current;let run=await api('/api/run?id='+encodeURIComponent(requested));await loadColumnHistory();if(current===requested&&version===refreshVersion){render(run);renderRecordExtras(run)}}
+if(version!==refreshVersion)return;
+$('connection').textContent='已连接';
+}catch(e){if(version===refreshVersion)$('connection').textContent='连接不可用：'+explainError(e.message)}finally{refreshing=false;if(version!==refreshVersion)void refresh()}
+}
+async function init(){try{catalog=await api('/api/catalog');const hasBenchmark=catalog.benchmark_available??catalog.questions.length>0;options($('mode'),[['custom','数据库问答'],...(hasBenchmark?[['benchmark','BIRD 题库评测']]:[])]);configureSources();await refresh();setInterval(refresh,1000)}catch(e){$('error').textContent=explainError(e.message)}}init();
 </script></html>
