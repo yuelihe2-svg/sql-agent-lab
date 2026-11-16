@@ -141,6 +141,8 @@ node src/sql_agent_lab/macsql/test_user_ui.cjs
 
 ## 协作开发
 
+实验分支的汇总记录见 [DeepSeek 单角色与三角色实验总结](docs/experiments/2026-11-16-deepseek-role-comparison.zh-CN.md)，包含准确率、调用开销和 trace 机制分析，不包含原始日志或数据库内容。
+
 `main` 保存已验证的版本。每次开发从最新的 `main` 新建功能分支，小步提交，通过 Pull Request 说明问题、改动和离线验证结果，再审查合并。工程改造与 Agent 行为修改分开提交，便于追踪结果变化。
 
 每位开发者使用自己的 `.local/` 配置和仓库外运行目录。不要提交密钥、真实数据库、模型权重或运行日志；固定的 `fixtures/` 是离线测试输入，使用范围见 `NOTICE.md`。运行普通测试不需要模型；真实模型验证和 BIRD 批量评测应单独约定。
