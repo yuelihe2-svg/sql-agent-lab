@@ -46,7 +46,13 @@ def test_browser_write_endpoints_reject_foreign_origin_and_invalid_body():
             assert client.post('/api/start', json={}, headers={'Origin': 'https://example.com'}).status_code == 403
             assert client.post('/api/start', json=[]).status_code == 400
             assert client.get('/api/runs', headers={'Host': 'foreign.example'}).status_code == 403
-            assert client.get('/').status_code == 200
+            page = client.get('/')
+            assert page.status_code == 200
+            assert '让数据，回答你的问题' in page.text
+            assert '详细视图' in page.text
+            observatory = client.get('/observatory')
+            assert observatory.status_code == 200
+            assert '执行轨迹' in observatory.text
     finally:
         server.shutdown()
         server.server_close()

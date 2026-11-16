@@ -1,0 +1,10 @@
+{
+  "sources": [
+    {
+      "id": "shop",
+      "name": "商店演示数据",
+      "kind": "sqlite",
+      "path": "D:/sql-agent-data/shop.sqlite"
+    }
+  ]
+}

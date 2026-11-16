@@ -17,6 +17,7 @@ def fixture_app(tmp_path):
     app.history = None
     app.active = None
     app.stop = threading.Event()
+    app.lock = threading.Lock()
     batch = tmp_path/'batch'
     batch.mkdir()
     app.recorded_batches = [batch]
