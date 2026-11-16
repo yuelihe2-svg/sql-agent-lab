@@ -133,3 +133,23 @@ def test_worker_records_actual_usage_and_scores_after_model(tmp_path,monkeypatch
     assert saved['input_tokens']==10 and saved['output_tokens']==5 and saved['usage_complete']
     evidence=json.loads((out/setting/'q1/evaluation-evidence.json').read_text(encoding='utf8'))
     assert evidence['model_input'] is False
+
+
+def test_chinese_report_renders_saved_results_and_escapes_question(tmp_path):
+    from sql_agent_lab.experiments.role_comparison import write
+    from sql_agent_lab.experiments.comparison_report import generate
+    write(tmp_path/'protocol.json',dict(count_per_setting=1,model='offline',documented_version='fixture',
+        seed_for_sampling=0,excluded_known_fixture_ids=[],strata_counts={'db / simple':1}))
+    write(tmp_path/'questions.json',[dict(question_id=1,db_id='db',question='<script>bad</script>',difficulty='simple')])
+    write(tmp_path/'completion.json',dict(database_unchanged={'db':True}))
+    for setting in SETTINGS:
+        folder=tmp_path/setting/'q1';folder.mkdir(parents=True)
+        write(folder/'result.json',dict(setting=setting,question_id='1',db_id='db',score=1,
+            status='completed',elapsed_seconds=1,agent_seconds=.5,feedback={'status':'ok'},
+            cloud_api_calls=1,repair_count=0,usage_complete=True,sql='SELECT 1'))
+    generate(tmp_path)
+    report=(tmp_path/'report-zh.html').read_text(encoding='utf8')
+    assert '<script>bad</script>' not in report and '&lt;script&gt;' in report
+    assert report.count('<details>')==1
+    assert '本次 B、C 均未触发修复' in report
+    assert (tmp_path/'results.csv').exists()
