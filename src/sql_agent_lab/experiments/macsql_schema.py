@@ -48,6 +48,35 @@ def value_examples(values, column_type):
     return str(chosen)
 
 
+def frequency_examples(cursor, column_type, limits):
+    """Same examples as full materialization, with constant retained memory.
+
+    The original returns no examples for >10 distinct numeric values, or any
+    overlong/URL/email text. Once such a value is observed the answer is known;
+    stopping the cursor is exact, not sampling a prefix as a complete domain.
+    """
+    retained, count, size, has_null = [], 0, 0, False
+    numeric = column_type in {'INTEGER', 'REAL', 'NUMERIC', 'FLOAT', 'INT'}
+    text_type = column_type in {'TEXT', 'VARCHAR'}
+    for (value,) in cursor:
+        count += 1
+        if numeric and count > 10:
+            return ''
+        if value is None:
+            has_null = True
+        elif str(value).strip():
+            if text_type and (len(str(value)) > 50 or isinstance(value, str) and (
+                'http://' in value or 'https://' in value or re.match(r'^[\w\.-]+@[\w\.-]+\.\w+$', value)
+            )):
+                return ''
+            if len(retained) < 6:
+                retained.append(value)
+        size += len(value) if isinstance(value, bytes) else len(str(value).encode('utf8'))
+        if count > limits.max_result_rows or size > limits.max_result_bytes:
+            raise EvaluationLimitExceeded('Schema value scan exceeds reproduction resource limit')
+    return value_examples(([None] if has_null else []) + retained, column_type)
+
+
 @dataclass(frozen=True)
 class BirdSchema:
     db_id: str
@@ -115,12 +144,12 @@ def prepare_schema(tools, entry):
     foreign = entry['foreign_keys']
     keys = set(primary) | {i for pair in foreign for i in pair}
     actual = tools.load_schema(db_id)
-    if set(names) != set(actual):
+    if not set(names) <= set(actual):
         raise ValueError('BIRD metadata tables differ from database')
     tables = {}
     for table_index, name in enumerate(names):
         indexed = [(i, c) for i, (t, c) in enumerate(originals) if t == table_index]
-        if {c for _, c in indexed} != set(actual[name]['columns']):
+        if not {c for _, c in indexed} <= set(actual[name]['columns']):
             raise ValueError('BIRD metadata columns differ from database')
         columns = []
         for index, column in indexed:
@@ -131,8 +160,7 @@ def prepare_schema(tools, entry):
                        f'GROUP BY {identifier} ORDER BY COUNT(*) DESC')
                 with tools.connection(db_id, query=True) as conn:
                     conn.text_factory = lambda b: b.decode(errors='ignore')
-                    values = [r[0] for r in bounded_rows(conn.execute(sql), tools.limits)]
-                examples = value_examples(values, actual[name]['columns'][column]['type'])
+                    examples = frequency_examples(conn.execute(sql), actual[name]['columns'][column]['type'], tools.limits)
             columns.append(dict(name=column,
                                 full_name=descriptions[index][1].replace('_', ' '), examples=examples))
         tables[name] = dict(columns=columns,

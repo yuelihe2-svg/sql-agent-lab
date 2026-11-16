@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from sql_agent_lab.experiments import macsql_reproduction as reproduction
-from sql_agent_lab.experiments.macsql_schema import BirdSchema, prepare_schema, value_examples
+from sql_agent_lab.experiments.macsql_schema import BirdSchema, prepare_schema, value_examples, frequency_examples
 from sql_agent_lab.macsql.dataset import Question, Reference
 from sql_agent_lab.macsql.deepseek_api import Ledger, MODEL
 from sql_agent_lab.macsql.reference_core import ModelReply
@@ -219,6 +219,60 @@ def test_metadata_mismatch_is_not_silently_substituted(tools_and_schema):
 ])
 def test_original_value_filters(values, kind, expected):
     assert value_examples(values, kind) == expected
+
+
+def test_streaming_examples_equal_full_materialization():
+    import random
+    rng = random.Random(7)
+    domain = [None, '', '  ', 'alpha', 'beta', '2020-01-01', 'https://example.org',
+              'a@example.org', 'x' * 51, 0, 1, 2, '2021-03-04 01:00:00']
+    for kind in ('TEXT', 'VARCHAR', 'INTEGER', 'REAL', 'NUMERIC', 'UNKNOWN'):
+        for _ in range(100):
+            values = rng.sample(domain, rng.randint(0,len(domain)))
+            assert frequency_examples(((v,) for v in values),kind,ToolLimits()) == value_examples(values,kind)
+
+
+def test_original_metadata_ignores_extra_database_tables(tools_and_schema):
+    from sql_agent_lab.experiments.reproduction_batch import validate_metadata
+    tools, _, entry = tools_and_schema
+    actual = tools.load_schema('db')
+    actual['extra'] = dict(columns={'extra_col':dict(type='TEXT',pk=False)},foreign_keys=[])
+    audit = validate_metadata(entry, actual)
+    assert audit['extra_sqlite_tables'] == ['extra'] and audit['columns'] == 2
+
+
+def test_metadata_invalid_key_is_rejected(tools_and_schema):
+    from sql_agent_lab.experiments.reproduction_batch import validate_metadata
+    tools, _, entry = tools_and_schema
+    with pytest.raises(ValueError,match='Invalid key'):
+        validate_metadata({**entry,'primary_keys':[0]},tools.load_schema('db'))
+
+
+def test_paid_worker_boundary_with_fake_model_only(scripted, tools_and_schema, tmp_path, monkeypatch):
+    from dataclasses import asdict
+    from types import SimpleNamespace
+    from sql_agent_lab.experiments import reproduction_batch as batch
+    tools, schema, _ = tools_and_schema
+    root = tmp_path/'batch'
+    root.mkdir(); (root/'schemas').mkdir(); (root/'annotations').mkdir()
+    def save(path, value):
+        path.write_text(json.dumps(value),encoding='utf8')
+    save(root/'protocol.json',dict(ids=['one'],databases={k:str(v) for k,v in tools.databases.items()},
+         upstream_dir='synthetic',evaluation_timeout=30,data=str(root/'annotations'),database_hashes={'db':'synthetic'}))
+    save(root/'questions.json',[dict(question_id='one',db_id='db',question='Return n',evidence='')])
+    save(root/'schemas/db.json',asdict(schema))
+    save(root/'annotations/mini_dev_sqlite.jsonl',dict(question_id='one',db_id='db',question='Return n',
+         SQL='SELECT n AS GOLD_SENTINEL FROM t'))
+    monkeypatch.setattr(batch,'verify_files',lambda *args,**kwargs:None)
+    calls=[]
+    def fake_model(**kwargs):
+        assert 'GOLD_SENTINEL' not in str(kwargs)
+        calls.append(kwargs)
+        return ModelReply('```sql SELECT n FROM t ```',1,1,simulated=True)
+    monkeypatch.setattr(batch,'ReproductionDeepSeekModel',lambda *args,**kwargs:fake_model)
+    batch.worker(SimpleNamespace(output=root,qid='one'))
+    result=json.loads((root/'D/qone/result.json').read_text(encoding='utf8'))
+    assert result['score']==1 and result['status']=='completed' and len(calls)==1
 
 
 def test_reference_objects_rejected_before_graph(scripted, tools_and_schema, monkeypatch):
