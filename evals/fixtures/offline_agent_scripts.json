@@ -1,0 +1,170 @@
+[
+  {
+    "script_id": "OFF-S01",
+    "case_id": "S01",
+    "source_id": "shop_a",
+    "question": "数据库共有多少客户？",
+    "coverage": "single_table",
+    "input_tokens": 180,
+    "output_tokens": 24,
+    "expect_sql_correct": true,
+    "expect_execution_status": "ok",
+    "expect_roles": ["decomposer"],
+    "responses": {
+      "decomposer": "```sql\nSELECT COUNT(*) AS customer_count FROM customers\n```"
+    }
+  },
+  {
+    "script_id": "OFF-S17",
+    "case_id": "S17",
+    "source_id": "shop_a",
+    "question": "每个客户一共创建了多少订单，包括从未下单的客户？",
+    "coverage": "join",
+    "input_tokens": 260,
+    "output_tokens": 70,
+    "expect_sql_correct": true,
+    "expect_execution_status": "ok",
+    "expect_roles": ["decomposer"],
+    "responses": {
+      "decomposer": "```sql\nSELECT cu.customer_id, cu.full_name, COUNT(DISTINCT o.order_id) AS order_count\nFROM customers cu\nLEFT JOIN orders o ON o.customer_id = cu.customer_id\nGROUP BY cu.customer_id, cu.full_name\n```"
+    }
+  },
+  {
+    "script_id": "OFF-S10",
+    "case_id": "S10",
+    "source_id": "shop_a",
+    "question": "各个城市有多少客户？",
+    "coverage": "group_by",
+    "input_tokens": 190,
+    "output_tokens": 28,
+    "expect_sql_correct": true,
+    "expect_execution_status": "ok",
+    "expect_roles": ["decomposer"],
+    "responses": {
+      "decomposer": "```sql\nSELECT city, COUNT(*) AS customer_count FROM customers GROUP BY city\n```"
+    }
+  },
+  {
+    "script_id": "OFF-S16",
+    "case_id": "S16",
+    "source_id": "shop_a",
+    "question": "2026年10月净收款额是多少？",
+    "coverage": "net_receipts",
+    "input_tokens": 240,
+    "output_tokens": 110,
+    "expect_sql_correct": true,
+    "expect_execution_status": "ok",
+    "expect_roles": ["decomposer"],
+    "responses": {
+      "decomposer": "```sql\nWITH captured AS (\n    SELECT COALESCE(SUM(amount_cents), 0) AS amount\n    FROM payments\n    WHERE status = 'succeeded'\n      AND paid_at >= '2026-10-01T00:00:00Z'\n      AND paid_at < '2026-11-01T00:00:00Z'\n),\nreturned AS (\n    SELECT COALESCE(SUM(amount_cents), 0) AS amount\n    FROM refunds\n    WHERE status = 'completed'\n      AND completed_at >= '2026-10-01T00:00:00Z'\n      AND completed_at < '2026-11-01T00:00:00Z'\n)\nSELECT captured.amount - returned.amount AS net_receipts_cents\nFROM captured CROSS JOIN returned\n```"
+    }
+  },
+  {
+    "script_id": "OFF-S33",
+    "case_id": "S33",
+    "source_id": "shop_a",
+    "question": "有多少客户没有填写邮箱？",
+    "coverage": "null",
+    "input_tokens": 170,
+    "output_tokens": 22,
+    "expect_sql_correct": true,
+    "expect_execution_status": "ok",
+    "expect_roles": ["decomposer"],
+    "responses": {
+      "decomposer": "```sql\nSELECT COUNT(*) AS missing_email_count FROM customers WHERE email IS NULL\n```"
+    }
+  },
+  {
+    "script_id": "OFF-S37",
+    "case_id": "S37",
+    "source_id": "shop_a",
+    "question": "2026年12月的成功收款总额是多少？没有记录时回答0。",
+    "coverage": "empty_result",
+    "input_tokens": 200,
+    "output_tokens": 40,
+    "expect_sql_correct": true,
+    "expect_execution_status": "ok",
+    "expect_roles": ["decomposer"],
+    "responses": {
+      "decomposer": "```sql\nSELECT COALESCE(SUM(amount_cents), 0) AS captured_cents\nFROM payments\nWHERE status = 'succeeded'\n  AND paid_at >= '2026-12-01T00:00:00Z'\n  AND paid_at < '2027-01-01T00:00:00Z'\n```"
+    }
+  },
+  {
+    "script_id": "OFF-S25",
+    "case_id": "S25",
+    "source_id": "shop_a",
+    "question": "一张订单多次成功支付时，总收款是这些成功支付金额之和。请列出所有有两笔或更多成功支付的订单及合计。",
+    "coverage": "repeated_payment_refund",
+    "input_tokens": 280,
+    "output_tokens": 55,
+    "expect_sql_correct": true,
+    "expect_execution_status": "ok",
+    "expect_roles": ["decomposer"],
+    "responses": {
+      "decomposer": "```sql\nSELECT o.order_id, SUM(p.amount_cents) AS captured_cents\nFROM orders o\nJOIN payments p ON p.order_id = o.order_id AND p.status = 'succeeded'\nGROUP BY o.order_id\nHAVING COUNT(*) >= 2\n```"
+    }
+  },
+  {
+    "script_id": "OFF-REPAIR",
+    "case_id": "S01",
+    "source_id": "shop_a",
+    "question": "数据库共有多少客户？",
+    "coverage": "sql_repair",
+    "input_tokens": 210,
+    "output_tokens": 30,
+    "expect_sql_correct": true,
+    "expect_execution_status": "ok",
+    "expect_roles": ["decomposer", "refiner"],
+    "expect_repair_count": 1,
+    "responses": {
+      "decomposer": "```sql\nSELECT not_a_column FROM customers\n```",
+      "refiner": "```sql\nSELECT COUNT(*) AS customer_count FROM customers\n```"
+    }
+  },
+  {
+    "script_id": "OFF-S01-B",
+    "case_id": "S01",
+    "source_id": "shop_b",
+    "question": "数据库共有多少客户？",
+    "coverage": "datasource_switch",
+    "input_tokens": 180,
+    "output_tokens": 24,
+    "expect_sql_correct": true,
+    "expect_execution_status": "ok",
+    "expect_roles": ["decomposer"],
+    "responses": {
+      "decomposer": "```sql\nSELECT COUNT(*) AS customer_count FROM customers\n```"
+    }
+  },
+  {
+    "script_id": "OFF-REJECT",
+    "case_id": "S01",
+    "source_id": "shop_a",
+    "question": "数据库共有多少客户？",
+    "coverage": "execution_rejected",
+    "input_tokens": null,
+    "output_tokens": null,
+    "expect_sql_correct": false,
+    "expect_execution_status": "error",
+    "expect_roles": ["decomposer", "refiner"],
+    "responses": {
+      "decomposer": "```sql\nDELETE FROM customers\n```",
+      "refiner": "```sql\nDELETE FROM customers\n```"
+    }
+  },
+  {
+    "script_id": "OFF-S16-WRONG",
+    "case_id": "S16",
+    "source_id": "shop_a",
+    "question": "2026年10月净收款额是多少？",
+    "coverage": "wrong_executable_sql",
+    "input_tokens": 220,
+    "output_tokens": 36,
+    "expect_sql_correct": false,
+    "expect_execution_status": "ok",
+    "expect_roles": ["decomposer"],
+    "responses": {
+      "decomposer": "```sql\nSELECT COALESCE(SUM(amount_cents), 0) AS net_receipts_cents\nFROM payments\nWHERE paid_at >= '2026-10-01T00:00:00Z'\n  AND paid_at < '2026-11-01T00:00:00Z'\n```"
+    }
+  }
+]
