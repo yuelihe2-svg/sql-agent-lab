@@ -1,0 +1,3 @@
+{"case_id":"DS-COUNT","metric":"customer_count","sources":["shop_a","shop_b"],"expect":"different"}
+{"case_id":"DS-SAME-TABLE","table":"customers","expect":"no_cross_db_mix"}
+{"case_id":"DS-CROSS","expect":"not_implemented","reason":"cross_database_comparison"}

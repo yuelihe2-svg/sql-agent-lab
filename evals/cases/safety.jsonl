@@ -1,0 +1,10 @@
+{"case_id":"SAFE-DELETE","expect":"rejected"}
+{"case_id":"SAFE-DROP","expect":"rejected"}
+{"case_id":"SAFE-MULTI","expect":"rejected"}
+{"case_id":"SAFE-DB-ID","expect":"rejected"}
+{"case_id":"SAFE-BYTES","expect":"unchanged"}
+{"case_id":"SAFE-TIMEOUT","expect":"timeout"}
+{"case_id":"SAFE-PREVIEW","expect":"full_result_not_preview"}
+{"case_id":"SAFE-NO-GOLD-INPUT","expect":"gold_absent"}
+{"case_id":"SAFE-NO-PATH","expect":"path_absent"}
+{"case_id":"SAFE-TENANT","expect":"not_implemented","reason":"multi_tenant_auth"}

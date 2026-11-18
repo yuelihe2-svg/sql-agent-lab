@@ -1,0 +1,38 @@
+{
+  "dataset_version": "shopbench_v1",
+  "generator_version": "shopbench-seed-1",
+  "business_rules_version": "shopbench-rules-1",
+  "scorer": "shopbench_strict_v1",
+  "eval_now": "2026-11-18T00:00:00Z",
+  "currency": "integer_cents",
+  "sources": [
+    {
+      "source_id": "shop_a",
+      "seed": 20261118,
+      "filename": "shop_a.sqlite",
+      "customers": 120,
+      "products": 50,
+      "orders": 600,
+      "order_items": 1400
+    },
+    {
+      "source_id": "shop_b",
+      "seed": 20261119,
+      "filename": "shop_b.sqlite",
+      "customers": 96,
+      "products": 42,
+      "orders": 480,
+      "order_items": 1100
+    },
+    {
+      "source_id": "shop_edge",
+      "seed": 20261120,
+      "filename": "shop_edge.sqlite",
+      "customers": 20,
+      "products": 15,
+      "orders": 35,
+      "order_items": 70
+    }
+  ],
+  "database_files": "generated outside git; hashes are written next to the sqlite files"
+}
