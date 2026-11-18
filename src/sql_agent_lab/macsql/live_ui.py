@@ -84,9 +84,11 @@ class Observatory:
             raise ValueError('Configure at least one SQLite source (--sources) or BIRD dataset (--data-dir)')
         # SourceRegistry remains the authority for SQLite paths. The optional
         # metadata file receives only the public catalog.
+        self.workspace_db = None
         if workspace_db is not None:
             from sql_agent_lab.workspace.database import sync_registered_sources
             sync_registered_sources(workspace_db, self.sources.catalog())
+            self.workspace_db = Path(workspace_db)
         self.dataset = self.benchmark.dataset if self.benchmark else []
         self.metadata = load_metadata(metadata) if metadata else None
         self.history = Path(history).resolve() if history else None
@@ -111,6 +113,31 @@ class Observatory:
         except OSError as error:
             task['persistence_error'] = str(error)
             raise
+        else:
+            self._project_workspace(run_id)
+
+    def _project_workspace(self, run_id):
+        """Copy a saved run into the optional workspace database.
+
+        The run directory is already the source of truth. A database error is
+        reported on the in-memory task and does not rewrite that directory.
+        """
+        if self.workspace_db is None:
+            return
+        try:
+            import sqlite3
+            from sql_agent_lab.workspace.database import WorkspaceStore, record_saved_run
+            path = self.output / run_id
+            manifest = json.loads((path / 'manifest.json').read_text(encoding='utf8'))
+            task = json.loads((path / 'task.json').read_text(encoding='utf8'))
+            result_path = path / 'result.json'
+            result = json.loads(result_path.read_text(encoding='utf8')) if result_path.is_file() else None
+            record_saved_run(
+                WorkspaceStore(self.workspace_db), run_id=run_id, manifest=manifest, task=task,
+                result=result, artifact_dir=str(path.resolve()))
+        except (OSError, sqlite3.Error, ValueError) as error:
+            if run_id in self.tasks:
+                self.tasks[run_id]['persistence_error'] = str(error)
 
     def _task_view(self, run_id, path, result):
         return task_view(path, result, active=self.active == run_id,

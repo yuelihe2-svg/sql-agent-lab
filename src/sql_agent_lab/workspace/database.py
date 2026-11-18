@@ -4,14 +4,16 @@ User databases are never opened here. Callers pass the application file path.
 `live_ui.main` does not call this module.
 """
 from contextlib import closing, contextmanager
+from dataclasses import replace
 from pathlib import Path
 import re
 import sqlite3
+import uuid
 
 from sql_agent_lab.macsql.task_lifecycle import utc_now
 
 from .models import (
-    Conversation, DataSource, Message, User, Workspace, data_source_from_catalog,
+    AgentRun, Conversation, DataSource, Message, User, Workspace, data_source_from_catalog,
 )
 
 
@@ -19,6 +21,9 @@ SCHEMA_VERSION = 1
 # One implicit local workspace. Restarts reuse this id instead of inserting another.
 LOCAL_WORKSPACE_ID = '5c6a1e0a-7b34-4d5e-9f10-0a1b2c3d4e5f'
 LOCAL_WORKSPACE_NAME = 'Local'
+# One implicit local user. This is not an account system.
+LOCAL_USER_ID = '6d7b2f1b-8c45-4e6f-a021-1b2c3d4e5f60'
+LOCAL_USER_NAME = 'Local'
 APP_TABLES = frozenset({
     'schema_migrations', 'workspace', 'app_user', 'membership', 'data_source',
     'data_source_grant', 'conversation', 'message', 'agent_run', 'audit_event',
@@ -151,6 +156,7 @@ def sync_registered_sources(path, catalog):
     store = WorkspaceStore(path)
     created_at = utc_now()
     store.ensure_local_workspace(created_at)
+    store.ensure_local_user(created_at)
     for entry in catalog:
         if not isinstance(entry, dict):
             raise ValueError('Data source metadata cannot include server paths or credentials')
@@ -159,6 +165,114 @@ def sync_registered_sources(path, catalog):
             created_at=created_at)
         store.register_data_source(source)
     return store
+
+
+def record_saved_run(store, *, run_id, manifest, task, result, artifact_dir):
+    """Project one saved run directory into the workspace database.
+
+    The directory must already contain the task. Only the question text is
+    stored on the user message. Reference SQL, samples, and trace stay out.
+    """
+    if not isinstance(manifest, dict) or not isinstance(task, dict):
+        raise ValueError('Saved run is missing manifest or task')
+    question = manifest.get('question')
+    if not isinstance(question, dict):
+        raise ValueError('Saved run is missing a question')
+    text = question.get('question')
+    datasource_id = question.get('db_id')
+    if not isinstance(text, str) or not isinstance(datasource_id, str):
+        raise ValueError('Saved run is missing a question')
+    created_at = manifest.get('created_at') or task.get('started_at')
+    store.ensure_local_user(created_at)
+    body = text.strip()
+    try:
+        existing = store.get_agent_run(run_id)
+    except ValueError as error:
+        if str(error) != 'Agent run is not registered':
+            raise
+        existing = None
+    projected = _run_from_saved(
+        run_id, datasource_id, manifest, task, result, artifact_dir,
+        conversation_id=None if existing is None else existing.conversation_id,
+        user_message_id=None if existing is None else existing.user_message_id)
+    if existing is None:
+        conversation = Conversation(
+            str(uuid.uuid4()), LOCAL_WORKSPACE_ID, LOCAL_USER_ID, datasource_id,
+            _question_title(body), created_at, created_at)
+        message = Message(str(uuid.uuid4()), 1, 'user', body, created_at, conversation.id)
+        projected = replace(
+            projected, conversation_id=conversation.id, user_message_id=message.id)
+        return store.begin_run(conversation, message, projected)
+    return store.save_agent_run(projected)
+
+
+def _question_title(text):
+    compact = ' '.join(text.split())
+    if not compact:
+        raise ValueError('Saved run is missing a question')
+    if len(compact) <= 80:
+        return compact
+    return compact[:79] + '…'
+
+
+def _run_from_saved(run_id, datasource_id, manifest, task, result, artifact_dir,
+                    *, conversation_id, user_message_id):
+    status = None
+    score = None
+    if isinstance(result, dict):
+        status = result.get('status') or None
+        if 'score' in result:
+            score = result.get('score')
+    review = manifest.get('semantic_review', False)
+    return AgentRun(
+        id=run_id,
+        conversation_id=conversation_id,
+        user_message_id=user_message_id,
+        datasource_id=datasource_id,
+        state=task.get('state'),
+        stage=task.get('stage') or None,
+        started_at=task.get('started_at'),
+        updated_at=task.get('updated_at'),
+        ended_at=task.get('ended_at'),
+        stop_requested_at=task.get('stop_requested_at'),
+        error=task.get('error') or None,
+        result_status=status,
+        score=score,
+        semantic_review=review if isinstance(review, bool) else False,
+        artifact_dir=artifact_dir)
+
+
+def _insert_agent_run(conn, run):
+    conn.execute(
+        'INSERT INTO agent_run(id, conversation_id, user_message_id, datasource_id, state, '
+        'stage, started_at, updated_at, ended_at, stop_requested_at, error, result_status, '
+        'score, semantic_review, artifact_dir) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        _run_values(run))
+
+
+def _update_agent_run(conn, run):
+    conn.execute(
+        'UPDATE agent_run SET state = ?, stage = ?, started_at = ?, updated_at = ?, ended_at = ?, '
+        'stop_requested_at = ?, error = ?, result_status = ?, score = ?, semantic_review = ? '
+        'WHERE id = ?',
+        (run.state, run.stage, run.started_at, run.updated_at, run.ended_at, run.stop_requested_at,
+         run.error, run.result_status, run.score, int(run.semantic_review), run.id))
+
+
+def _run_values(run):
+    return (run.id, run.conversation_id, run.user_message_id, run.datasource_id, run.state,
+            run.stage, run.started_at, run.updated_at, run.ended_at, run.stop_requested_at,
+            run.error, run.result_status, run.score, int(run.semantic_review), run.artifact_dir)
+
+
+def _run_from_row(row):
+    return AgentRun(
+        id=row['id'], datasource_id=row['datasource_id'], state=row['state'],
+        semantic_review=bool(row['semantic_review']), conversation_id=row['conversation_id'],
+        user_message_id=row['user_message_id'], stage=row['stage'], started_at=row['started_at'],
+        updated_at=row['updated_at'], ended_at=row['ended_at'],
+        stop_requested_at=row['stop_requested_at'], error=row['error'],
+        result_status=row['result_status'], score=row['score'], artifact_dir=row['artifact_dir'])
 
 
 def remove_database(path):
@@ -215,6 +329,28 @@ class WorkspaceStore:
                 (workspace.id, workspace.name, workspace.created_at))
             return workspace
 
+    def ensure_local_user(self, created_at):
+        """Create the single local owner. A restart keeps the same user id."""
+        with self._session() as conn:
+            _require_workspace(conn, LOCAL_WORKSPACE_ID)
+            row = conn.execute(
+                'SELECT id, display_name, created_at FROM app_user WHERE id = ?',
+                (LOCAL_USER_ID,)).fetchone()
+            if row is None:
+                user = User(LOCAL_USER_ID, LOCAL_USER_NAME, created_at)
+                conn.execute(
+                    'INSERT INTO app_user(id, display_name, created_at) VALUES (?, ?, ?)',
+                    (user.id, user.display_name, user.created_at))
+            else:
+                user = User(row['id'], row['display_name'], row['created_at'])
+            if conn.execute(
+                    'SELECT 1 FROM membership WHERE workspace_id = ? AND user_id = ?',
+                    (LOCAL_WORKSPACE_ID, LOCAL_USER_ID)).fetchone() is None:
+                conn.execute(
+                    'INSERT INTO membership(workspace_id, user_id, role) VALUES (?, ?, ?)',
+                    (LOCAL_WORKSPACE_ID, LOCAL_USER_ID, 'owner'))
+            return user
+
     def register_data_source(self, source):
         """Insert a public data-source record, or keep the existing row on restart."""
         _expect(source, DataSource)
@@ -254,6 +390,77 @@ class WorkspaceStore:
             rows = conn.execute(
                 'SELECT * FROM data_source WHERE workspace_id = ? ORDER BY id', (workspace_id,))
             return [_source_from_row(row) for row in rows]
+
+    def begin_run(self, conversation, message, run):
+        """Insert one conversation, its user message, and the agent run.
+
+        The same run id updates that run instead of inserting another record.
+        """
+        _expect(conversation, Conversation)
+        _expect(message, Message)
+        _expect(run, AgentRun)
+        if message.conversation_id != conversation.id or message.role != 'user' or message.seq != 1:
+            raise ValueError('A run starts with one user message')
+        if run.conversation_id != conversation.id or run.user_message_id != message.id:
+            raise ValueError('Agent run is not linked to its conversation')
+        if run.datasource_id != conversation.datasource_id:
+            raise ValueError('Conversation data source does not match the run')
+        if conversation.user_id != LOCAL_USER_ID or conversation.workspace_id != LOCAL_WORKSPACE_ID:
+            raise ValueError('Runs belong to the local workspace user')
+        with self._session() as conn:
+            existing = conn.execute('SELECT id FROM agent_run WHERE id = ?', (run.id,)).fetchone()
+            if existing is not None:
+                _update_agent_run(conn, run)
+                return _run_from_row(conn.execute(
+                    'SELECT * FROM agent_run WHERE id = ?', (run.id,)).fetchone())
+            _require_workspace(conn, conversation.workspace_id)
+            if conn.execute('SELECT 1 FROM app_user WHERE id = ?', (conversation.user_id,)).fetchone() is None:
+                raise ValueError('Conversation user is not registered')
+            source = conn.execute(
+                'SELECT workspace_id FROM data_source WHERE id = ?',
+                (conversation.datasource_id,)).fetchone()
+            if source is None or source['workspace_id'] != conversation.workspace_id:
+                raise ValueError('Conversation data source is not registered')
+            conn.execute(
+                'INSERT INTO conversation(id, workspace_id, user_id, datasource_id, title, '
+                'created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                (conversation.id, conversation.workspace_id, conversation.user_id,
+                 conversation.datasource_id, conversation.title, conversation.created_at,
+                 conversation.updated_at))
+            conn.execute(
+                'INSERT INTO message(id, conversation_id, seq, role, body, created_at) '
+                'VALUES (?, ?, ?, ?, ?, ?)',
+                (message.id, message.conversation_id, message.seq, message.role,
+                 message.body, message.created_at))
+            _insert_agent_run(conn, run)
+            return run
+
+    def save_agent_run(self, run):
+        """Update a run that was already linked. Does not create a conversation."""
+        _expect(run, AgentRun)
+        with self._session() as conn:
+            existing = conn.execute(
+                'SELECT conversation_id, user_message_id FROM agent_run WHERE id = ?',
+                (run.id,)).fetchone()
+            if existing is None:
+                raise ValueError('Agent run is not registered')
+            if existing['conversation_id'] != run.conversation_id or existing['user_message_id'] != run.user_message_id:
+                raise ValueError('Agent run link cannot be replaced')
+            _update_agent_run(conn, run)
+            return _run_from_row(conn.execute(
+                'SELECT * FROM agent_run WHERE id = ?', (run.id,)).fetchone())
+
+    def get_agent_run(self, run_id):
+        with self._session() as conn:
+            row = conn.execute('SELECT * FROM agent_run WHERE id = ?', (run_id,)).fetchone()
+        if row is None:
+            raise ValueError('Agent run is not registered')
+        return _run_from_row(row)
+
+    def list_agent_runs(self):
+        with self._session() as conn:
+            rows = conn.execute('SELECT * FROM agent_run ORDER BY started_at, id')
+            return [_run_from_row(row) for row in rows]
 
     def add_conversation(self, conversation):
         _expect(conversation, Conversation)
