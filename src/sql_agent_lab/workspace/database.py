@@ -10,10 +10,15 @@ import sqlite3
 
 from sql_agent_lab.macsql.task_lifecycle import utc_now
 
-from .models import Conversation, DataSource, Message, User, Workspace
+from .models import (
+    Conversation, DataSource, Message, User, Workspace, data_source_from_catalog,
+)
 
 
 SCHEMA_VERSION = 1
+# One implicit local workspace. Restarts reuse this id instead of inserting another.
+LOCAL_WORKSPACE_ID = '5c6a1e0a-7b34-4d5e-9f10-0a1b2c3d4e5f'
+LOCAL_WORKSPACE_NAME = 'Local'
 APP_TABLES = frozenset({
     'schema_migrations', 'workspace', 'app_user', 'membership', 'data_source',
     'data_source_grant', 'conversation', 'message', 'agent_run', 'audit_event',
@@ -135,6 +140,27 @@ def migrate(path):
     return path
 
 
+def sync_registered_sources(path, catalog):
+    """Copy public SourceRegistry records into the application database.
+
+    `catalog` must already be the path-free public list. This function does not
+    open a user database and does not store filesystem paths.
+    """
+    if not isinstance(catalog, list) or not catalog:
+        raise ValueError('At least one public data source is required')
+    store = WorkspaceStore(path)
+    created_at = utc_now()
+    store.ensure_local_workspace(created_at)
+    for entry in catalog:
+        if not isinstance(entry, dict):
+            raise ValueError('Data source metadata cannot include server paths or credentials')
+        source = data_source_from_catalog(
+            LOCAL_WORKSPACE_ID, entry, secret_ref='sources:' + entry.get('id', ''),
+            created_at=created_at)
+        store.register_data_source(source)
+    return store
+
+
 def remove_database(path):
     """Delete an application database created by migrate. User databases are refused."""
     path = Path(path)
@@ -169,13 +195,52 @@ class WorkspaceStore:
     def add_data_source(self, source):
         _expect(source, DataSource)
         with self._session() as conn:
-            if conn.execute('SELECT 1 FROM workspace WHERE id = ?', (source.workspace_id,)).fetchone() is None:
-                raise ValueError('Workspace is not registered')
+            _require_workspace(conn, source.workspace_id)
             conn.execute(
                 'INSERT INTO data_source(id, workspace_id, name, kind, read_only, status, '
                 'secret_ref, schema_fingerprint, created_at) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)',
                 (source.id, source.workspace_id, source.name, source.kind, source.status,
                  source.secret_ref, source.schema_fingerprint, source.created_at))
+
+    def ensure_local_workspace(self, created_at):
+        with self._session() as conn:
+            row = conn.execute(
+                'SELECT id, name, created_at, local_only FROM workspace WHERE id = ?',
+                (LOCAL_WORKSPACE_ID,)).fetchone()
+            if row is not None:
+                return Workspace(row['id'], row['name'], row['created_at'], bool(row['local_only']))
+            workspace = Workspace(LOCAL_WORKSPACE_ID, LOCAL_WORKSPACE_NAME, created_at)
+            conn.execute(
+                'INSERT INTO workspace(id, name, created_at, local_only) VALUES (?, ?, ?, 1)',
+                (workspace.id, workspace.name, workspace.created_at))
+            return workspace
+
+    def register_data_source(self, source):
+        """Insert a public data-source record, or keep the existing row on restart."""
+        _expect(source, DataSource)
+        with self._session() as conn:
+            _require_workspace(conn, source.workspace_id)
+            row = conn.execute(
+                'SELECT workspace_id, name, kind, status, secret_ref, schema_fingerprint, created_at '
+                'FROM data_source WHERE id = ?', (source.id,)).fetchone()
+            if row is None:
+                conn.execute(
+                    'INSERT INTO data_source(id, workspace_id, name, kind, read_only, status, '
+                    'secret_ref, schema_fingerprint, created_at) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)',
+                    (source.id, source.workspace_id, source.name, source.kind, source.status,
+                     source.secret_ref, source.schema_fingerprint, source.created_at))
+                return source
+            if row['workspace_id'] != source.workspace_id:
+                raise ValueError('Data source belongs to another workspace')
+            current = (row['name'], row['kind'], row['status'], row['secret_ref'], row['schema_fingerprint'])
+            incoming = (source.name, source.kind, source.status, source.secret_ref, source.schema_fingerprint)
+            if current != incoming:
+                conn.execute(
+                    'UPDATE data_source SET name = ?, kind = ?, status = ?, secret_ref = ?, '
+                    'schema_fingerprint = ? WHERE id = ?',
+                    (*incoming, source.id))
+            return _source_from_row(conn.execute(
+                'SELECT * FROM data_source WHERE id = ?', (source.id,)).fetchone())
 
     def get_data_source(self, source_id):
         with self._session() as conn:

@@ -129,7 +129,8 @@ def test_conversations_survive_restart_and_bind_one_data_source(tmp_path):
     assert 'credential-sentinel-value' not in text
 
 
-def test_existing_service_does_not_open_the_workspace_database():
-    source = inspect.getsource(live_ui)
-    assert 'workspace.sqlite' not in source
-    assert 'sql_agent_lab.workspace' not in source
+def test_workspace_database_is_opt_in():
+    assert inspect.signature(live_ui.Observatory.__init__).parameters['workspace_db'].default is None
+    source = inspect.getsource(live_ui.argument_parser)
+    assert '--workspace-db' in source
+    assert 'default=None' in source

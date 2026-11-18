@@ -68,7 +68,7 @@ class ObservedTools:
 
 class Observatory:
     def __init__(self, data, output, metadata=None, history=None, analysis_dir=None, recorded_batches=None,
-                 *, sources=None):
+                 *, sources=None, workspace_db=None):
         self.data = Path(data).resolve() if data else None
         self.output = Path(output).resolve()
         checkout = Path(__file__).resolve().parents[3]
@@ -82,6 +82,11 @@ class Observatory:
         self.databases = self.sources.databases
         if not self.databases:
             raise ValueError('Configure at least one SQLite source (--sources) or BIRD dataset (--data-dir)')
+        # SourceRegistry remains the authority for SQLite paths. The optional
+        # metadata file receives only the public catalog.
+        if workspace_db is not None:
+            from sql_agent_lab.workspace.database import sync_registered_sources
+            sync_registered_sources(workspace_db, self.sources.catalog())
         self.dataset = self.benchmark.dataset if self.benchmark else []
         self.metadata = load_metadata(metadata) if metadata else None
         self.history = Path(history).resolve() if history else None
@@ -447,7 +452,7 @@ def make_handler(app):
     return Handler
 
 
-def main():
+def argument_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--data-dir', type=Path, help='Optional pinned BIRD benchmark directory')
     parser.add_argument('--sources', type=Path, help='Local SQLite source registry JSON')
@@ -457,10 +462,16 @@ def main():
     parser.add_argument('--analysis-dir', type=Path, help='Read-only local historical analysis exports')
     parser.add_argument('--recorded-batch', type=Path, action='append', default=[],
                         help='Read an existing API batch without invoking models or evaluation')
+    parser.add_argument('--workspace-db', type=Path, default=None,
+                        help='Optional workspace metadata SQLite file. Omit to leave startup unchanged.')
     parser.add_argument('--port', type=int, default=8765)
-    args = parser.parse_args()
+    return parser
+
+
+def main():
+    args = argument_parser().parse_args()
     app = Observatory(args.data_dir, args.output_dir, args.metadata, args.history, args.analysis_dir,
-                      args.recorded_batch, sources=args.sources)
+                      args.recorded_batch, sources=args.sources, workspace_db=args.workspace_db)
     server = ThreadingHTTPServer(('127.0.0.1', args.port), make_handler(app))
     print(f'AgentOpt Observatory: http://127.0.0.1:{server.server_port}', flush=True)
     try:
