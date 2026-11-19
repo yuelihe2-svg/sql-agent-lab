@@ -53,7 +53,7 @@ def create_knowledge(store, workspace_db, datasource_id, title, document_format,
     directory = knowledge_dir(workspace_db)
     _write_temp(directory, key, body)
     try:
-        store.insert_knowledge(record)
+        store.insert_knowledge(record, body=body)
     except Exception:
         _discard_temp(directory, key)
         raise
@@ -83,7 +83,7 @@ def update_knowledge(store, workspace_db, datasource_id, knowledge_id, title, do
     }
     _write_temp(directory, key, body)
     try:
-        store.update_knowledge(updated)
+        store.update_knowledge(updated, body=body)
     except Exception:
         _discard_temp(directory, key)
         raise
@@ -132,6 +132,20 @@ def read_available_knowledge(store, workspace_db, datasource_id):
         except ValueError:
             skipped.append({'id': row['id'], 'version': row['version'], 'reason': 'unavailable'})
     return documents, skipped
+
+
+def reindex_knowledge(store, workspace_db):
+    """Rebuild the FTS rows from the knowledge files. Missing files are left out."""
+    rows = []
+    directory = knowledge_dir(workspace_db)
+    for row in store.list_all_knowledge_rows():
+        try:
+            body = _read_body(directory, row)
+        except ValueError:
+            continue
+        rows.append({**row, 'body': body})
+    store.replace_knowledge_index(rows)
+    return {'indexed': len(rows), 'status': 'rebuilt'}
 
 
 def _validate(title, document_format, body):

@@ -74,11 +74,15 @@ Returns the saved profile and the knowledge documents for that source only. A la
 
 Returns tables, columns, declared foreign keys, and knowledge documents that match the question by name or keyword. The match reasons are included. Schema hits are catalog facts. Knowledge hits keep `id`, `version`, `content_hash`, `provenance`, and `verification` (`user_provided_unverified`). A document is never returned with `treat_as_instruction` true, even when its text looks like an instruction.
 
-The question limit is 1,000 characters. At most 8 tables, 8 columns per table, and 5 knowledge excerpts are returned. An excerpt is at most 400 characters. An empty knowledge library or a question with no name overlap returns empty lists. Results are cached by schema fingerprint, knowledge version, and question. A schema or knowledge change misses that cache. This route does not read business rows and does not call the Agent.
+The question limit is 1,000 characters. At most 8 tables, 8 columns per table, and 5 knowledge excerpts are returned. An excerpt is at most 400 characters. An empty knowledge library or a question with no name overlap returns empty lists. Results are cached by schema fingerprint, knowledge version, question, and retrieval strategy. A schema or knowledge change misses that cache. This route does not read business rows and does not call the Agent.
+
+Optional `retrieval_strategy` is `keyword` (default), `bm25`, or `hybrid`. Omitting it keeps the deterministic keyword algorithm. `keyword` matches schema names and knowledge keywords. `bm25` uses that same schema match and ranks knowledge with the workspace FTS5 index. `hybrid` adds declared foreign keys that touch one matched table. Schema scores and BM25 scores are separate fields and are not added together. `embedding` is rejected because no embedding model is configured. FTS5 uses the `unicode61` tokenizer: a Chinese sentence without spaces is one token, so this is not Chinese semantic search.
+
+Knowledge create, update, and delete write the same title and body into `knowledge_fts` in the workspace database, with the document version and content hash. The index does not contain business-table rows. A query that cannot be parsed as safe quoted tokens matches nothing. If the index rows drift from the knowledge files, the next BM25 search rebuilds the index from those files.
 
 ## Conversation grounding
 
-`POST /api/conversations/{id}/messages` accepts an optional boolean `use_grounding`. Omitting it, or sending `false`, keeps the previous execution path and does not call grounding retrieval.
+`POST /api/conversations/{id}/messages` accepts an optional boolean `use_grounding`. Omitting it, or sending `false`, keeps the previous execution path and does not call grounding retrieval. Optional `retrieval_strategy` is read only when grounding is on. Omitting it uses `keyword`.
 
 `true` retrieves the bound data source only, builds a bounded untrusted reference block, and appends that block after the existing role prompt. The Selector, Decomposer, and Refiner prompt text is unchanged. User knowledge stays labeled unverified and cannot override system rules. The saved run records matched names, knowledge ids, versions, hashes, the schema fingerprint, context size, and retrieval latency. It does not record an API cost unless a real price is available. Grounding evidence does not prove that the SQL is correct.
 

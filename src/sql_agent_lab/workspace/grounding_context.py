@@ -99,4 +99,7 @@ def render_grounding(bundle, skipped=None, *, question_truncated=False):
         'proves_sql': False,
         'estimated_api_cost': None,
         'cost_status': 'not_recorded',
+        'strategy': bundle.get('strategy') or 'keyword',
+        'index_status': bundle.get('index_status') or 'not_used',
+        'score_channels_combined': False,
     }

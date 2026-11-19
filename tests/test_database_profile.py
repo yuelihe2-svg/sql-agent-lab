@@ -69,7 +69,7 @@ def test_version_one_store_upgrades_in_place(tmp_path):
     migrate(path)
     with closing(_connect(path)) as conn:
         versions = [row[0] for row in conn.execute('SELECT version FROM schema_migrations ORDER BY version')]
-        assert versions == [1, SCHEMA_VERSION]
+        assert versions == list(range(1, SCHEMA_VERSION + 1))
         assert conn.execute('SELECT name FROM workspace').fetchone()[0] == 'Local'
         assert conn.execute(
             "SELECT name FROM sqlite_schema WHERE name = 'knowledge_document'").fetchone() is not None

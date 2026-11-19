@@ -1,9 +1,15 @@
-"""Deterministic schema and knowledge retrieval.
+"""Schema and knowledge retrieval.
 
-Matches names and keywords. It does not read table rows, invent foreign keys,
-or treat user documents as instructions.
+`keyword` is the deterministic baseline and the default. `bm25` keeps that
+schema match and ranks user knowledge with FTS5 BM25. `hybrid` adds declared
+foreign keys that touch one matched table, still without adding the two scores
+together. An embedding strategy can be registered later; none is loaded here.
 """
 import re
+
+from sql_agent_lab.workspace.knowledge_index import (
+    FTS5Unavailable, KnowledgeIndexError, MemoryKnowledgeIndex,
+)
 
 
 QUESTION_LIMIT = 1000
@@ -21,9 +27,25 @@ _INSTRUCTION = re.compile(
     r'ignore\s+(all\s+)?previous|system\s+prompt|drop\s+table|you\s+are\s+now',
     re.IGNORECASE)
 _CACHE = {}
+STRATEGIES = ('keyword', 'bm25', 'hybrid')
+_EXTRA_KNOWLEDGE_STRATEGIES = {}
 
 
-def ground(datasource_id, profile, documents, question, cache=None):
+def register_knowledge_strategy(name, search):
+    """Register a future knowledge channel. Built-in names stay fixed.
+
+    `search(documents, datasource_id, question, limit)` returns knowledge hits.
+    Calling this does not download a model.
+    """
+    if name in STRATEGIES or name == 'embedding':
+        raise ValueError('A built-in retrieval strategy cannot be replaced')
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError('strategy name is required')
+    _EXTRA_KNOWLEDGE_STRATEGIES[name] = search
+
+
+def ground(datasource_id, profile, documents, question, cache=None, strategy='keyword',
+           knowledge_index=None):
     """Return a bounded grounding bundle for one data source."""
     if not isinstance(question, str) or not question.strip():
         raise ValueError('question is required')
@@ -31,8 +53,9 @@ def ground(datasource_id, profile, documents, question, cache=None):
         raise ValueError('question is too long')
     if not isinstance(profile, dict) or not isinstance(profile.get('fingerprint'), str):
         raise ValueError('A database profile is required')
+    strategy = _resolve_strategy(strategy)
     key = (datasource_id, profile['fingerprint'], _knowledge_key(documents, datasource_id),
-           ' '.join(question.lower().split()))
+           ' '.join(question.lower().split()), strategy)
     store = _CACHE if cache is None else cache
     cached = store.get(key)
     if cached is not None:
@@ -42,15 +65,25 @@ def ground(datasource_id, profile, documents, question, cache=None):
     tokens = _tokens(question)
     tables = _tables(profile, tokens, question)
     selected = {table['name'] for table in tables}
-    relationships = _relationships(profile, selected)
-    knowledge = _knowledge(documents, tokens, datasource_id)
+    relationships = _relationships(profile, selected, one_sided=strategy == 'hybrid')
+    knowledge, index_status = _knowledge_channel(
+        strategy, documents, tokens, datasource_id, profile, question, knowledge_index)
     result = {
         'datasource_id': datasource_id,
         'fingerprint': profile['fingerprint'],
         'question': question.strip(),
+        'strategy': strategy,
+        'channels': {
+            'schema': 'keyword',
+            'relationships': 'declared_foreign_key',
+            'knowledge': 'keyword' if strategy == 'keyword' else 'bm25' if strategy in ('bm25', 'hybrid') else strategy,
+        },
+        'score_channels_combined': False,
+        'embedding_configured': False,
         'tables': tables,
         'relationships': relationships,
         'knowledge': knowledge,
+        'index_status': index_status,
         'schema_facts': 'catalog',
         'business_definitions': 'user_provided_unverified',
         'system_rules': 'not_overridable',
@@ -64,6 +97,16 @@ def ground(datasource_id, profile, documents, question, cache=None):
     }
     store[key] = result
     return result
+
+
+def _resolve_strategy(strategy):
+    if strategy is None or strategy == 'keyword':
+        return 'keyword'
+    if strategy in ('bm25', 'hybrid') or strategy in _EXTRA_KNOWLEDGE_STRATEGIES:
+        return strategy
+    if strategy == 'embedding':
+        raise ValueError('embedding retrieval is not configured')
+    raise ValueError('retrieval_strategy must be keyword, bm25, or hybrid')
 
 
 def retrieval_scores(predicted, expected):
@@ -111,21 +154,27 @@ def _tables(profile, tokens, question):
     return ranked[:MAX_TABLES]
 
 
-def _relationships(profile, selected):
+def _relationships(profile, selected, *, one_sided=False):
     found = []
     for item in profile.get('relationships') or []:
         if not isinstance(item, dict) or item.get('origin') != 'declared_foreign_key':
             continue
-        if item.get('from_table') in selected and item.get('to_table') in selected:
-            found.append({
-                'from_table': item['from_table'],
-                'from_columns': list(item.get('from_columns') or []),
-                'to_table': item['to_table'],
-                'to_columns': list(item.get('to_columns') or []),
-                'origin': 'declared_foreign_key',
-                'reason': 'both tables matched and this foreign key is declared',
-                'schema_facts': 'catalog',
-            })
+        both = item.get('from_table') in selected and item.get('to_table') in selected
+        touched = item.get('from_table') in selected or item.get('to_table') in selected
+        if not both and not (one_sided and touched):
+            continue
+        found.append({
+            'from_table': item['from_table'],
+            'from_columns': list(item.get('from_columns') or []),
+            'to_table': item['to_table'],
+            'to_columns': list(item.get('to_columns') or []),
+            'origin': 'declared_foreign_key',
+            'attachment': 'both_tables_matched' if both else 'one_matched_table',
+            'reason': 'both tables matched and this foreign key is declared' if both
+            else 'one matched table has this declared foreign key',
+            'schema_facts': 'catalog',
+            'score_kind': 'declared_foreign_key',
+        })
     return found
 
 
@@ -137,8 +186,9 @@ def _knowledge_key(documents, datasource_id):
     return tuple(sorted(rows))
 
 
-def _knowledge(documents, tokens, datasource_id):
+def _knowledge(documents, tokens, datasource_id, identifiers=()):
     ranked = []
+    identifiers = set(identifiers)
     for document in documents or []:
         if not isinstance(document, dict) or document.get('datasource_id') != datasource_id:
             continue
@@ -147,7 +197,8 @@ def _knowledge(documents, tokens, datasource_id):
         overlap = sorted(
             token for token in tokens
             if token not in _WEAK and len(token) >= 3 and token in _tokens(title + '\n' + body))
-        if not overlap:
+        distinctive = [token for token in overlap if token not in identifiers]
+        if not distinctive:
             continue
         excerpt = body.strip()
         truncated = len(excerpt) > EXCERPT_CHARS
@@ -162,13 +213,30 @@ def _knowledge(documents, tokens, datasource_id):
             'title': title,
             'excerpt': excerpt,
             'excerpt_truncated': truncated,
-            'score': len(overlap),
-            'reason': 'shared keywords ' + ', '.join(overlap[:6]),
+            'score': len(distinctive),
+            'score_kind': 'keyword',
+            'reason': 'shared keywords ' + ', '.join(distinctive[:6]),
             'treat_as_instruction': False,
             'instruction_like_text': bool(_INSTRUCTION.search(title + '\n' + body)),
         })
     ranked.sort(key=lambda item: (-item['score'], str(item['id'])))
     return ranked[:MAX_KNOWLEDGE]
+
+
+def _identifier_tokens(profile):
+    found = set()
+    for table in profile.get('tables') or []:
+        if isinstance(table, dict):
+            found.update(_tokens(str(table.get('name') or '')))
+            for column in table.get('columns') or []:
+                if isinstance(column, dict):
+                    found.update(_tokens(str(column.get('name') or '')))
+    stems = set()
+    for token in found:
+        stems.add(token)
+        if len(token) >= 4 and token.endswith('s'):
+            stems.add(token[:-1])
+    return {token for token in stems if token not in _WEAK and len(token) >= 3}
 
 
 def _name_score(name, tokens, question):
@@ -183,9 +251,9 @@ def _name_score(name, tokens, question):
             continue
         if part in tokens or _word(question, part):
             hits.append(part)
-        elif len(part) >= 4 and part.endswith('s') and (part[:-1] in tokens or _word(question, part[:-1])):
+        elif len(parts) == 1 and len(part) >= 4 and part.endswith('s') and (part[:-1] in tokens or _word(question, part[:-1])):
             hits.append(part)
-        elif (part + 's') in tokens or _word(question, part + 's'):
+        elif len(parts) == 1 and ((part + 's') in tokens or _word(question, part + 's')):
             hits.append(part)
     if not hits:
         return 0, ''
@@ -210,3 +278,69 @@ def _tokens(text):
             for index in range(len(word) - 1):
                 found.add(word[index:index + 2])
     return found
+
+
+def _knowledge_channel(strategy, documents, tokens, datasource_id, profile, question, knowledge_index):
+    if strategy == 'keyword':
+        return _knowledge(documents, tokens, datasource_id, _identifier_tokens(profile)), 'not_used'
+    if strategy in _EXTRA_KNOWLEDGE_STRATEGIES:
+        hits = _EXTRA_KNOWLEDGE_STRATEGIES[strategy](documents, datasource_id, question, MAX_KNOWLEDGE)
+        return list(hits)[:MAX_KNOWLEDGE], 'extension'
+    try:
+        index = knowledge_index or MemoryKnowledgeIndex(documents)
+        hits = index.search(datasource_id, question, MAX_KNOWLEDGE)
+    except FTS5Unavailable:
+        raise
+    except KnowledgeIndexError:
+        raise
+    by_id = {}
+    for document in documents or []:
+        if isinstance(document, dict) and document.get('datasource_id') == datasource_id:
+            by_id[document.get('id')] = document
+    ranked = []
+    for hit in hits:
+        document = by_id.get(hit['knowledge_id'])
+        if document is None:
+            continue
+        if str(document.get('version')) != str(hit['version']):
+            continue
+        if document.get('content_hash') != hit['content_hash']:
+            continue
+        title = document.get('title') if isinstance(document.get('title'), str) else ''
+        body = document.get('body') if isinstance(document.get('body'), str) else ''
+        excerpt = body.strip()
+        truncated = len(excerpt) > EXCERPT_CHARS
+        if truncated:
+            excerpt = excerpt[:EXCERPT_CHARS]
+        ranked.append({
+            'id': document.get('id'),
+            'version': document.get('version'),
+            'content_hash': document.get('content_hash'),
+            'provenance': 'user',
+            'verification': 'user_provided_unverified',
+            'title': title,
+            'excerpt': excerpt,
+            'excerpt_truncated': truncated,
+            'score': None,
+            'bm25_score': hit['bm25_score'],
+            'score_kind': 'bm25',
+            'reason': _bm25_reason(question, title, body),
+            'treat_as_instruction': False,
+            'instruction_like_text': bool(_INSTRUCTION.search(title + '\n' + body)),
+        })
+    status = getattr(knowledge_index, 'status', None) or getattr(index, 'status', 'ok')
+    return ranked, status
+
+
+def _bm25_reason(question, title, body):
+    query = fts_tokens(question)
+    title_tokens = _tokens(title)
+    if any(token.lower() in title_tokens for token in query):
+        return 'fts5 bm25 title match; score is not a schema score'
+    if query:
+        return 'fts5 bm25 body match; score is not a schema score'
+    return 'fts5 bm25 match; score is not a schema score'
+
+
+def fts_tokens(question):
+    return [match.group(0) for match in re.finditer(r'[A-Za-z0-9_]{2,}|[\u4e00-\u9fff]{2,}', question)][:32]

@@ -263,6 +263,14 @@ th { color: var(--quiet); font-weight: 600; font-size: 12px; }
 }
 .composer-source { margin: 0 0 8px; font-size: 13px; color: var(--quiet); }
 .composer-source strong { color: var(--ink); font-weight: 600; }
+.retrieval-strategy, select[aria-label="Retrieval strategy"] {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  padding: 8px 10px;
+  margin: 0 0 8px;
+}
 .grounding-toggle { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; color: var(--quiet); font-size: 13px; }
 .grounding-toggle input { accent-color: var(--accent); }
 .composer-box {

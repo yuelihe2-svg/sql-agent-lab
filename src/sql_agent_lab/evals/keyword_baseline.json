@@ -1,0 +1,419 @@
+[
+  {
+    "id": "customers-count",
+    "tables": [
+      "customers"
+    ],
+    "columns": [],
+    "knowledge_ids": [],
+    "knowledge_versions": [],
+    "knowledge_scores": [],
+    "bm25_scores": [],
+    "reasons": []
+  },
+  {
+    "id": "orders-count",
+    "tables": [
+      "orders"
+    ],
+    "columns": [],
+    "knowledge_ids": [],
+    "knowledge_versions": [],
+    "knowledge_scores": [],
+    "bm25_scores": [],
+    "reasons": []
+  },
+  {
+    "id": "product-titles",
+    "tables": [
+      "products",
+      "order_items"
+    ],
+    "columns": [
+      "products.title",
+      "order_items.product_id"
+    ],
+    "knowledge_ids": [],
+    "knowledge_versions": [],
+    "knowledge_scores": [],
+    "bm25_scores": [],
+    "reasons": []
+  },
+  {
+    "id": "customer-per-order",
+    "tables": [
+      "customers",
+      "order_items",
+      "orders"
+    ],
+    "columns": [
+      "customers.name",
+      "order_items.order_id",
+      "orders.customer_id"
+    ],
+    "knowledge_ids": [],
+    "knowledge_versions": [],
+    "knowledge_scores": [],
+    "bm25_scores": [],
+    "reasons": []
+  },
+  {
+    "id": "amount-by-status",
+    "tables": [
+      "orders",
+      "order_items"
+    ],
+    "columns": [
+      "orders.amount",
+      "orders.status",
+      "order_items.order_id"
+    ],
+    "knowledge_ids": [],
+    "knowledge_versions": [],
+    "knowledge_scores": [],
+    "bm25_scores": [],
+    "reasons": []
+  },
+  {
+    "id": "paid-count",
+    "tables": [
+      "orders"
+    ],
+    "columns": [
+      "orders.status"
+    ],
+    "knowledge_ids": [
+      "active-paid"
+    ],
+    "knowledge_versions": [
+      1
+    ],
+    "knowledge_scores": [
+      1
+    ],
+    "bm25_scores": [
+      null
+    ],
+    "reasons": [
+      "shared keywords paid"
+    ]
+  },
+  {
+    "id": "active-defined",
+    "tables": [
+      "orders"
+    ],
+    "columns": [],
+    "knowledge_ids": [
+      "active-open",
+      "active-paid"
+    ],
+    "knowledge_versions": [
+      1,
+      1
+    ],
+    "knowledge_scores": [
+      1,
+      1
+    ],
+    "bm25_scores": [
+      null,
+      null
+    ],
+    "reasons": [
+      "shared keywords active",
+      "shared keywords active"
+    ]
+  },
+  {
+    "id": "status-list",
+    "tables": [
+      "orders",
+      "order_items"
+    ],
+    "columns": [
+      "orders.status",
+      "order_items.order_id"
+    ],
+    "knowledge_ids": [],
+    "knowledge_versions": [],
+    "knowledge_scores": [],
+    "bm25_scores": [],
+    "reasons": []
+  },
+  {
+    "id": "names-sorted",
+    "tables": [
+      "customers",
+      "order_items",
+      "orders"
+    ],
+    "columns": [
+      "customers.name",
+      "order_items.order_id",
+      "orders.customer_id"
+    ],
+    "knowledge_ids": [],
+    "knowledge_versions": [],
+    "knowledge_scores": [],
+    "bm25_scores": [],
+    "reasons": []
+  },
+  {
+    "id": "paris-count",
+    "tables": [
+      "customers"
+    ],
+    "columns": [],
+    "knowledge_ids": [],
+    "knowledge_versions": [],
+    "knowledge_scores": [],
+    "bm25_scores": [],
+    "reasons": []
+  },
+  {
+    "id": "sku-lookup",
+    "tables": [
+      "products",
+      "order_items"
+    ],
+    "columns": [
+      "products.sku",
+      "order_items.product_id"
+    ],
+    "knowledge_ids": [],
+    "knowledge_versions": [],
+    "knowledge_scores": [],
+    "bm25_scores": [],
+    "reasons": []
+  },
+  {
+    "id": "sku-title",
+    "tables": [
+      "products",
+      "order_items"
+    ],
+    "columns": [
+      "products.sku",
+      "products.title",
+      "order_items.product_id"
+    ],
+    "knowledge_ids": [],
+    "knowledge_versions": [],
+    "knowledge_scores": [],
+    "bm25_scores": [],
+    "reasons": []
+  },
+  {
+    "id": "item-qty",
+    "tables": [
+      "products",
+      "order_items"
+    ],
+    "columns": [
+      "products.title",
+      "order_items.product_id"
+    ],
+    "knowledge_ids": [],
+    "knowledge_versions": [],
+    "knowledge_scores": [],
+    "bm25_scores": [],
+    "reasons": []
+  },
+  {
+    "id": "title-per-order",
+    "tables": [
+      "products",
+      "order_items",
+      "orders"
+    ],
+    "columns": [
+      "products.title",
+      "order_items.order_id",
+      "order_items.product_id"
+    ],
+    "knowledge_ids": [],
+    "knowledge_versions": [],
+    "knowledge_scores": [],
+    "bm25_scores": [],
+    "reasons": []
+  },
+  {
+    "id": "city-for-order",
+    "tables": [
+      "customers",
+      "order_items",
+      "orders"
+    ],
+    "columns": [
+      "customers.city",
+      "order_items.order_id",
+      "orders.customer_id"
+    ],
+    "knowledge_ids": [],
+    "knowledge_versions": [],
+    "knowledge_scores": [],
+    "bm25_scores": [],
+    "reasons": []
+  },
+  {
+    "id": "items-per-customer",
+    "tables": [
+      "customers",
+      "order_items",
+      "orders"
+    ],
+    "columns": [
+      "orders.customer_id"
+    ],
+    "knowledge_ids": [],
+    "knowledge_versions": [],
+    "knowledge_scores": [],
+    "bm25_scores": [],
+    "reasons": []
+  },
+  {
+    "id": "void-orders",
+    "tables": [
+      "orders"
+    ],
+    "columns": [],
+    "knowledge_ids": [],
+    "knowledge_versions": [],
+    "knowledge_scores": [],
+    "bm25_scores": [],
+    "reasons": []
+  },
+  {
+    "id": "notes",
+    "tables": [
+      "notes"
+    ],
+    "columns": [],
+    "knowledge_ids": [],
+    "knowledge_versions": [],
+    "knowledge_scores": [],
+    "bm25_scores": [],
+    "reasons": []
+  },
+  {
+    "id": "product-label",
+    "tables": [
+      "order_items",
+      "products"
+    ],
+    "columns": [
+      "order_items.product_id"
+    ],
+    "knowledge_ids": [],
+    "knowledge_versions": [],
+    "knowledge_scores": [],
+    "bm25_scores": [],
+    "reasons": []
+  },
+  {
+    "id": "revenue-location",
+    "tables": [],
+    "columns": [],
+    "knowledge_ids": [],
+    "knowledge_versions": [],
+    "knowledge_scores": [],
+    "bm25_scores": [],
+    "reasons": []
+  },
+  {
+    "id": "weather",
+    "tables": [],
+    "columns": [],
+    "knowledge_ids": [],
+    "knowledge_versions": [],
+    "knowledge_scores": [],
+    "bm25_scores": [],
+    "reasons": []
+  },
+  {
+    "id": "conflict",
+    "tables": [
+      "orders"
+    ],
+    "columns": [],
+    "knowledge_ids": [
+      "active-open",
+      "active-paid"
+    ],
+    "knowledge_versions": [
+      1,
+      1
+    ],
+    "knowledge_scores": [
+      2,
+      2
+    ],
+    "bm25_scores": [
+      null,
+      null
+    ],
+    "reasons": [
+      "shared keywords active, open",
+      "shared keywords active, paid"
+    ]
+  },
+  {
+    "id": "untrusted",
+    "tables": [
+      "customers",
+      "order_items",
+      "notes",
+      "orders"
+    ],
+    "columns": [
+      "order_items.order_id"
+    ],
+    "knowledge_ids": [
+      "active-open",
+      "active-paid"
+    ],
+    "knowledge_versions": [
+      1,
+      1
+    ],
+    "knowledge_scores": [
+      1,
+      1
+    ],
+    "bm25_scores": [
+      null,
+      null
+    ],
+    "reasons": [
+      "shared keywords active",
+      "shared keywords active"
+    ]
+  },
+  {
+    "id": "paid-sum",
+    "tables": [
+      "orders",
+      "order_items"
+    ],
+    "columns": [
+      "orders.amount",
+      "order_items.order_id"
+    ],
+    "knowledge_ids": [
+      "active-paid"
+    ],
+    "knowledge_versions": [
+      1
+    ],
+    "knowledge_scores": [
+      1
+    ],
+    "bm25_scores": [
+      null
+    ],
+    "reasons": [
+      "shared keywords paid"
+    ]
+  }
+]

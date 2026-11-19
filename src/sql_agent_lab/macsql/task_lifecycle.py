@@ -76,7 +76,7 @@ def task_view(path, result, *, active=False, stop_requested=False, managed=False
             # A crash can happen after result.json is saved but before task.json.
             task.update(state=final, stage='finished', error=result.get('error'), source='result_recovery')
         elif managed:
-            task.update(state='interrupted', error='服务中断，任务未保存最终结果；未自动重跑。',
+            task.update(state='interrupted', error='The service stopped before the task saved a final result. It was not rerun automatically.',
                         source='interruption_recovery')
     return task
 

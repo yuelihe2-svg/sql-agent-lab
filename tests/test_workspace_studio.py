@@ -37,7 +37,7 @@ def test_result_view_keeps_preview_separate_and_drops_private_fields(tmp_path):
     assert view['complete'] is False
     assert view['preview'] is True
     assert view['has_more'] is True
-    assert '不能把预览行数当作总数' in view['summary']
+    assert 'Do not treat the preview count as the total.' in view['summary']
     assert view['evaluated'] is False
     assert view['tokens'] == {'input': 3, 'output': 4}
     assert view['rows'] == [[1], [2]]
@@ -53,7 +53,7 @@ def test_successful_value_is_not_reported_as_accuracy(tmp_path):
     })
     assert view['evaluated'] is False
     assert view['complete'] is True
-    assert view['summary'] == '「n」的查询结果是 42。'
+    assert view['summary'] == '"n" is 42.'
     assert 'score' not in view
     assert '100' not in json.dumps(view)
 
@@ -67,8 +67,8 @@ def test_workspace_page_uses_live_results_and_keeps_old_pages(tmp_path, monkeypa
         assert 'SQL Agent Studio' in studio
         assert '1284600' not in studio and '1284600' not in script
         assert 'innerHTML' not in script
-        assert '数据问答' in client.get('/').text
-        assert '开发者观察台' in client.get('/observatory').text
+        assert 'Ask your data' in client.get('/').text
+        assert 'Observatory' in client.get('/observatory').text
         created = client.post('/api/conversations', json={'datasource_id': 'shop', 'title': 'Orders'}).json()
         app.worker_done.clear()
         first = client.post(f"/api/conversations/{created['id']}/messages",
@@ -157,7 +157,7 @@ def test_stop_failure_and_interrupted_views(tmp_path, monkeypatch):
         failure = detail['runs'][1]['result']
         assert detail['runs'][1]['state'] == 'failed'
         assert failure['complete'] is False
-        assert '未找到对应的表或字段' in failure['summary']
+        assert 'No matching table or column was found' in failure['summary']
         assert failure['rows'] == []
         assert 'missing_column' in failure['sql']
     assert all(path.read_bytes() == content for path, content in app.business_before.items())
@@ -169,7 +169,7 @@ def test_workspace_off_serves_the_page_without_changing_start(tmp_path, monkeypa
         assert client.get('/api/conversations').status_code == 404
         page = client.get('/workspace/').text
         assert 'SQL Agent Studio' in page
-        assert '未启用 Workspace' in client.get('/workspace/app.js').text
+        assert 'Workspace is off' in client.get('/workspace/app.js').text
         assert client.get('/').status_code == 200
         app.worker_done.clear()
         started = client.post('/api/start', json={'db_id': 'shop', 'question': 'How many rows?'})

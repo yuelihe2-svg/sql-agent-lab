@@ -386,11 +386,18 @@ class Observatory:
         profile = self.refresh_profile(question.db_id)
         from sql_agent_lab.workspace.grounding_context import render_grounding
         from sql_agent_lab.workspace.knowledge import read_available_knowledge
+        from sql_agent_lab.workspace.knowledge_index import WorkspaceKnowledgeIndex
         from sql_agent_lab.workspace.retrieval import QUESTION_LIMIT, ground
         documents, skipped = read_available_knowledge(
             self._workspace(), self.workspace_db, question.db_id)
         truncated = len(question.question) > QUESTION_LIMIT
-        bundle = ground(question.db_id, profile, documents, question.question[:QUESTION_LIMIT])
+        strategy = _retrieval_strategy(payload)
+        index = None
+        if strategy != 'keyword':
+            index = WorkspaceKnowledgeIndex(self._workspace(), self.workspace_db)
+        bundle = ground(
+            question.db_id, profile, documents, question.question[:QUESTION_LIMIT],
+            strategy=strategy, knowledge_index=index)
         block, summary = render_grounding(bundle, skipped, question_truncated=truncated)
         summary['retrieval_latency_ms'] = round((time.perf_counter() - started) * 1000, 1)
         return {'grounding_enabled': True, 'grounding_block': block, 'grounding': summary}
@@ -401,11 +408,22 @@ class Observatory:
         question = payload.get('question', '')
         if not isinstance(question, str) or not 1 <= len(question.strip()) <= 1000:
             raise ValueError('question must be 1–1000 characters')
+        strategy = _retrieval_strategy(payload)
         profile = self.refresh_profile(source_id)
         from sql_agent_lab.workspace.knowledge import list_knowledge
+        from sql_agent_lab.workspace.knowledge_index import WorkspaceKnowledgeIndex
         from sql_agent_lab.workspace.retrieval import ground
         documents = list_knowledge(self._workspace(), self.workspace_db, source_id)
-        return ground(source_id, profile, documents, question.strip())
+        index = None
+        if strategy != 'keyword':
+            index = WorkspaceKnowledgeIndex(self._workspace(), self.workspace_db)
+        started = time.perf_counter()
+        bundle = ground(
+            source_id, profile, documents, question.strip(),
+            strategy=strategy, knowledge_index=index)
+        bundle = dict(bundle)
+        bundle['retrieval_latency_ms'] = round((time.perf_counter() - started) * 1000, 1)
+        return bundle
 
     def source_context(self, source_id):
         """Stored profile plus user knowledge. Does not change the Agent prompt."""
@@ -714,6 +732,18 @@ def _use_grounding(payload):
     return value
 
 
+def _retrieval_strategy(payload):
+    """Default keyword. An omitted field does not change the current algorithm."""
+    if not isinstance(payload, dict) or 'retrieval_strategy' not in payload:
+        return 'keyword'
+    value = payload['retrieval_strategy']
+    if value == 'embedding':
+        raise ValueError('embedding retrieval is not configured')
+    if value not in ('keyword', 'bm25', 'hybrid'):
+        raise ValueError('retrieval_strategy must be keyword, bm25, or hybrid')
+    return value
+
+
 def _reject_client_locations(payload):
     if not isinstance(payload, dict):
         raise ValueError('Expected a JSON object')
@@ -768,7 +798,7 @@ def make_handler(app):
                 if url.path in ('/api/analysis', '/analysis.csv', '/analysis.xlsx'):
                     directory = getattr(app, 'analysis_dir', None)
                     if directory is None:
-                        return self.send({'error': '未配置错误分析目录；使用 --analysis-dir 指定本地报告'}, 404)
+                        return self.send({'error': 'No analysis directory is configured. Pass --analysis-dir with a local report directory.'}, 404)
                     if url.path == '/api/analysis':
                         view = getattr(app,'analysis_view',None)
                         return self.send(view() if view else json.loads((directory/'analysis.json').read_text(encoding='utf8')))

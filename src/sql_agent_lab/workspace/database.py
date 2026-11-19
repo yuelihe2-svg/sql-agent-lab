@@ -12,12 +12,15 @@ import uuid
 
 from sql_agent_lab.macsql.task_lifecycle import utc_now
 
+from .knowledge_index import (
+    FTS_CREATE_SQL, FTS_TABLES, delete_index, fts5_available, search_index, upsert_index,
+)
 from .models import (
     AgentRun, Conversation, DataSource, Message, User, Workspace, data_source_from_catalog,
 )
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 # One implicit local workspace. Restarts reuse this id instead of inserting another.
 LOCAL_WORKSPACE_ID = '5c6a1e0a-7b34-4d5e-9f10-0a1b2c3d4e5f'
 LOCAL_WORKSPACE_NAME = 'Local'
@@ -27,7 +30,7 @@ LOCAL_USER_NAME = 'Local'
 APP_TABLES = frozenset({
     'schema_migrations', 'workspace', 'app_user', 'membership', 'data_source',
     'data_source_grant', 'conversation', 'message', 'agent_run', 'audit_event',
-    'database_profile', 'knowledge_document',
+    'database_profile', 'knowledge_document', *FTS_TABLES,
 })
 # Columns that would copy a user database, a credential, or gold SQL.
 FORBIDDEN_COLUMNS = frozenset({
@@ -140,7 +143,7 @@ CREATE TABLE IF NOT EXISTS knowledge_document (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
-"""),)
+"""), (3, FTS_CREATE_SQL + ';'),)
 
 
 def migrate(path):
@@ -156,6 +159,9 @@ def migrate(path):
         current = conn.execute('SELECT COALESCE(MAX(version), 0) FROM schema_migrations').fetchone()[0]
         if current > SCHEMA_VERSION:
             raise ValueError('Application database is newer than this code')
+        if current < 3 and not fts5_available(conn):
+            raise ValueError(
+                'This SQLite build does not provide FTS5, so the knowledge index cannot be created')
         for version, script in _MIGRATIONS:
             if version <= current:
                 continue
@@ -601,7 +607,7 @@ class WorkspaceStore:
         return {'fingerprint': row['fingerprint'], 'extracted_at': row['extracted_at'],
                 'profile_json': row['profile_json']}
 
-    def insert_knowledge(self, record):
+    def insert_knowledge(self, record, *, body=None):
         with self._session() as conn:
             _require_registered_source(conn, record['workspace_id'], record['datasource_id'])
             conn.execute(
@@ -611,8 +617,10 @@ class WorkspaceStore:
                 (record['id'], record['workspace_id'], record['datasource_id'], record['title'],
                  record['format'], record['content_hash'], record['version'], record['provenance'],
                  record['storage_key'], record['created_at'], record['updated_at']))
+            if body is not None:
+                upsert_index(conn, record, body)
 
-    def update_knowledge(self, record):
+    def update_knowledge(self, record, *, body=None):
         with self._session() as conn:
             current = conn.execute(
                 'SELECT version FROM knowledge_document WHERE id = ? AND datasource_id = ?',
@@ -626,6 +634,8 @@ class WorkspaceStore:
                 'version = ?, updated_at = ? WHERE id = ? AND datasource_id = ?',
                 (record['title'], record['format'], record['content_hash'], record['version'],
                  record['updated_at'], record['id'], record['datasource_id']))
+            if body is not None:
+                upsert_index(conn, record, body)
 
     def delete_knowledge(self, datasource_id, knowledge_id):
         with self._session() as conn:
@@ -634,10 +644,41 @@ class WorkspaceStore:
                 (knowledge_id, datasource_id)).fetchone()
             if row is None:
                 raise ValueError('Knowledge document is not registered')
+            delete_index(conn, knowledge_id)
             conn.execute(
                 'DELETE FROM knowledge_document WHERE id = ? AND datasource_id = ?',
                 (knowledge_id, datasource_id))
             return row['storage_key']
+
+    def list_all_knowledge_rows(self):
+        with self._session() as conn:
+            rows = conn.execute('SELECT * FROM knowledge_document ORDER BY datasource_id, id')
+            return [dict(row) for row in rows]
+
+    def knowledge_index_current(self):
+        """True when every knowledge row has the same id, version, and hash in FTS."""
+        with self._session() as conn:
+            docs = conn.execute(
+                'SELECT id, version, content_hash FROM knowledge_document').fetchall()
+            indexed = conn.execute(
+                'SELECT knowledge_id, version, content_hash FROM knowledge_fts').fetchall()
+        left = {(row['id'], str(row['version']), row['content_hash']) for row in docs}
+        right = {(row['knowledge_id'], str(row['version']), row['content_hash']) for row in indexed}
+        return left == right
+
+    def replace_knowledge_index(self, rows):
+        with self._session() as conn:
+            try:
+                conn.execute('DELETE FROM knowledge_fts')
+            except sqlite3.DatabaseError:
+                conn.execute('DROP TABLE IF EXISTS knowledge_fts')
+                conn.execute(FTS_CREATE_SQL)
+            for row in rows:
+                upsert_index(conn, row, row['body'])
+
+    def search_knowledge(self, datasource_id, question, limit):
+        with self._session() as conn:
+            return search_index(conn, datasource_id, question, limit)
 
     def get_knowledge_row(self, datasource_id, knowledge_id):
         with self._session() as conn:

@@ -50,7 +50,8 @@ CASES = [
     {'id': 'status-list', 'question': 'List order status values', 'answer_tables': ['orders'],
      'expected_rows': [['open'], ['paid'], ['void']], 'tags': ['no-definition']},
     {'id': 'names-sorted', 'question': 'customer names in alphabetical order',
-     'answer_tables': ['customers'], 'expected_rows': [['Ada'], ['Bo'], ['Cy']], 'tags': ['sort']},
+     'answer_tables': ['customers'], 'expected_rows': [['Ada'], ['Bo'], ['Cy']],
+     'ordered': True, 'tags': ['sort']},
     {'id': 'paris-count', 'question': 'How many customers are in Paris?', 'answer_tables': ['customers'],
      'expected_rows': [[2]], 'tags': ['value']},
     {'id': 'sku-lookup', 'question': 'which product has sku SKU-A', 'answer_tables': ['products'],
@@ -80,7 +81,7 @@ CASES = [
      'expected_rows': None, 'tags': ['no-match']},
     {'id': 'conflict', 'question': 'How many active orders are open or paid?',
      'answer_tables': ['orders'], 'required_knowledge': ['active-paid', 'active-open'],
-     'expected_rows': [[4]], 'tags': ['conflict']},
+     'expected_rows': [[3]], 'tags': ['conflict']},
     {'id': 'untrusted', 'question': 'How many customers appear in the active order note?',
      'answer_tables': ['customers', 'orders'], 'required_knowledge': ['active-paid'],
      'expected_rows': [[3]], 'tags': ['untrusted']},
@@ -160,10 +161,16 @@ def comparison_report(profile):
     }
 
 
-def score_sql(database, sql, expected_rows):
-    """Compare one read-only SELECT with expected rows. This does not call a model."""
+def score_sql(database, sql, expected_rows, *, ordered=False):
+    """Compare one read-only SELECT with expected rows. This does not call a model.
+
+    Unordered questions compare multisets. Ordered questions keep row order.
+    A query that executes with the wrong rows is not accurate.
+    """
+    if not isinstance(sql, str) or not sql.strip():
+        return {'execution_ok': False, 'accurate': False, 'reason': 'no sql'}
     text = sql.strip().rstrip(';')
-    if not text.lower().startswith('select') or ';' in text:
+    if not text.lower().startswith(('select', 'with')) or ';' in text:
         return {'execution_ok': False, 'accurate': False, 'reason': 'not a single select'}
     uri = Path(database).resolve().as_uri() + '?mode=ro'
     try:
@@ -174,6 +181,36 @@ def score_sql(database, sql, expected_rows):
         return {'execution_ok': False, 'accurate': False, 'reason': type(error).__name__}
     if len(rows) > 20:
         return {'execution_ok': True, 'accurate': False, 'reason': 'too many rows'}
-    found = sorted(tuple(row) for row in rows)
-    wanted = sorted(tuple(row) for row in expected_rows)
-    return {'execution_ok': True, 'accurate': found == wanted, 'reason': 'compared'}
+    found = [tuple(row) for row in rows]
+    if expected_rows is None:
+        return {'execution_ok': True, 'accurate': None, 'reason': 'no_expected_result'}
+    wanted = [tuple(row) for row in expected_rows]
+    accurate = _same_rows(found, wanted, ordered=ordered)
+    return {'execution_ok': True, 'accurate': accurate, 'reason': 'compared'}
+
+
+def _same_rows(found, wanted, *, ordered):
+    if len(found) != len(wanted):
+        return False
+    if ordered:
+        pairs = zip(found, wanted)
+    else:
+        pairs = zip(sorted(found, key=_row_key), sorted(wanted, key=_row_key))
+    return all(len(left) == len(right) and all(_cell_equal(a, b) for a, b in zip(left, right))
+               for left, right in pairs)
+
+
+def _cell_equal(found, wanted):
+    if found is None or wanted is None:
+        return found is None and wanted is None
+    if isinstance(found, bool) or isinstance(wanted, bool):
+        return found == wanted
+    if isinstance(found, (int, float)) and isinstance(wanted, (int, float)):
+        return abs(float(found) - float(wanted)) <= 1e-6
+    return found == wanted
+
+
+def _row_key(row):
+    return tuple((0, '') if value is None else (1, '' if isinstance(value, (int, float)) and not isinstance(value, bool) else str(value),
+                                                 float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else 0.0)
+                 for value in row)

@@ -65,7 +65,7 @@ def public_notice(value):
     if not isinstance(value, str) or not value.strip():
         return None
     if _PATH.search(value):
-        return '查询未能完成。'
+        return 'The query did not finish.'
     return value.strip()[:500]
 
 
@@ -159,6 +159,7 @@ def _grounding(result):
         'retrieval_latency_ms': _latency(raw.get('retrieval_latency_ms')),
         'agent_latency_ms': _latency(raw.get('agent_latency_ms')),
         'retrieval_cache': raw.get('retrieval_cache') if raw.get('retrieval_cache') in ('hit', 'miss') else None,
+        'strategy': raw.get('strategy') if raw.get('strategy') in ('keyword', 'bm25', 'hybrid') else 'keyword',
         'proves_sql': False,
         'estimated_api_cost': None,
     }
@@ -176,7 +177,7 @@ def _error_summary(state, result, feedback, task_error):
     if not failed:
         return None
     if feedback.get('status') == 'ok':
-        return 'SQL 已执行，但任务未正常完成。下方保留已取得的结果，请在详细视图检查失败原因。'
+        return 'The SQL ran, but the task did not finish normally. The rows already returned are kept below. Check the detail view for the cause.'
     raw = task_error or result.get('error') or feedback.get('message') or feedback.get('error') or ''
     return _friendly(raw)
 
@@ -184,23 +185,23 @@ def _error_summary(state, result, feedback, task_error):
 def _friendly(message):
     raw = public_notice(message) or ''
     if re.search(r'no such table|no such column', raw, re.I):
-        return '未找到对应的表或字段，请核对名称，或补充问题中的业务含义。'
+        return 'No matching table or column was found. Check the names, or add the business meaning to the question.'
     if re.search(r'syntax error|incomplete input|unrecognized token', raw, re.I):
-        return '生成的 SQL 存在语法问题，未能执行成功。请调整问题描述后重试，并展开 SQL 核对。'
+        return 'The generated SQL has a syntax problem and did not run. Adjust the question and check the SQL.'
     if re.search(r'not authorized|readonly|read.only|only.*select', raw, re.I):
-        return '这条 SQL 未通过只读检查。请改为查询问题，本应用不执行数据修改。'
+        return 'This SQL failed the read-only check. Ask a question. This application does not modify data.'
     if re.search(r'unable to open database|file is not a database', raw, re.I):
-        return '无法打开数据源，请检查 SQLite 文件路径和访问权限。'
+        return 'The data source could not be opened. Check the SQLite file path and permissions.'
     if re.search(r'database is locked', raw, re.I):
-        return '数据库当前被占用，请稍后重试。'
+        return 'The database is busy. Try again shortly.'
     if re.search(r'timeout|timed out|interrupted', raw, re.I):
-        return '本次处理超时，可以缩小查询范围后重试。'
+        return 'This request timed out. Narrow the query and try again.'
     if re.search(r'connect|connection|ollama', raw, re.I):
-        return '未能连接本地模型服务，请检查服务后重试。'
+        return 'The local model service could not be reached. Check the service and try again.'
     if re.search(r'already active', raw, re.I):
-        return '当前已有查询在运行，请等待结束。'
+        return 'A query is already running. Wait for it to finish.'
     if not raw:
-        return '查询未能完成。可切换到详细视图查看原因，调整问题后重试。'
+        return 'The query did not finish. Open the detail view, adjust the question, and try again.'
     return raw
 
 
@@ -215,25 +216,26 @@ def _summary(state, result, feedback, columns, rows, complete, error):
         return None
     column_count = feedback.get('column_count')
     if complete and len(rows) == 0:
-        text = '查询已成功执行，没有匹配的记录。可以检查筛选条件，或适当扩大查询范围。'
+        text = 'The query ran and returned no matching rows. Check the filters, or widen the question.'
     elif (complete and len(rows) == 1 and len(columns) == 1 and column_count == 1
           and len(rows[0]) == 1):
         value = rows[0][0]
-        label = '「' + columns[0] + '」'
+        label = '"' + columns[0] + '"'
         if value is None:
-            text = label + '的查询结果为 NULL（空值）。这不等于 0，也不代表没有返回记录。'
+            text = label + ' is NULL. That is not 0, and it does not mean no row was returned.'
         elif value == '':
-            text = label + '的查询结果为空字符串（长度为 0 的文本），不等于 NULL。'
+            text = label + ' is an empty string. That is not NULL.'
         else:
             shown = _format_value(value)
-            text = label + '的查询结果是 ' + shown + '。'
+            text = label + ' is ' + shown + '.'
     elif complete:
-        text = '查询返回了 ' + str(len(rows)) + ' 行、' + str(len(columns)) + ' 列结果，详见下方表格。'
+        text = ('The query returned ' + str(len(rows)) + ' rows and ' + str(len(columns))
+                + ' columns. See the table below.')
     else:
-        text = ('当前预览显示 ' + str(len(rows)) + ' 行、' + str(len(columns))
-                + ' 列。结果或字段值可能未完整展示，不能把预览行数当作总数。')
+        text = ('The preview shows ' + str(len(rows)) + ' rows and ' + str(len(columns))
+                + ' columns. Rows or values may be incomplete. Do not treat the preview count as the total.')
     if result.get('status') == 'needs_review':
-        text += ' 返回类型检查仍有待核对，请结合 SQL 和详细记录确认。'
+        text += ' The output-type check still needs review. Confirm it against the SQL and the detail record.'
     return text
 
 
