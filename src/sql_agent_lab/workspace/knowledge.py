@@ -118,6 +118,22 @@ def list_knowledge(store, workspace_db, datasource_id):
     return documents
 
 
+def read_available_knowledge(store, workspace_db, datasource_id):
+    """Return readable documents and ids that can no longer be verified.
+
+    A missing or altered file is skipped. It is not replaced with empty text
+    and it is not taken from another data source.
+    """
+    documents, skipped = [], []
+    directory = knowledge_dir(workspace_db)
+    for row in store.list_knowledge_rows(datasource_id):
+        try:
+            documents.append(_public(row, _read_body(directory, row)))
+        except ValueError:
+            skipped.append({'id': row['id'], 'version': row['version'], 'reason': 'unavailable'})
+    return documents, skipped
+
+
 def _validate(title, document_format, body):
     if not isinstance(title, str) or not title.strip() or title != title.strip():
         raise ValueError('title is required')

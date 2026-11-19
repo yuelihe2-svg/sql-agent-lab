@@ -263,6 +263,8 @@ th { color: var(--quiet); font-weight: 600; font-size: 12px; }
 }
 .composer-source { margin: 0 0 8px; font-size: 13px; color: var(--quiet); }
 .composer-source strong { color: var(--ink); font-weight: 600; }
+.grounding-toggle { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; color: var(--quiet); font-size: 13px; }
+.grounding-toggle input { accent-color: var(--accent); }
 .composer-box {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

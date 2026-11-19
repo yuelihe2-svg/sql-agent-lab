@@ -19,7 +19,7 @@ _SQL = 20000
 VIEW_FIELDS = (
     'summary', 'state', 'stage', 'execution_status', 'sql', 'columns', 'rows',
     'preview', 'has_more', 'truncated', 'complete', 'error', 'elapsed_seconds',
-    'tokens', 'evaluated',
+    'tokens', 'evaluated', 'grounding',
 )
 
 
@@ -56,6 +56,7 @@ def public_result(directory, *, state, stage, result, task_error=None):
         'elapsed_seconds': elapsed,
         'tokens': _tokens(directory),
         'evaluated': _evaluated(loaded),
+        'grounding': _grounding(loaded),
     }
 
 
@@ -128,6 +129,45 @@ def _evaluated(result):
     if isinstance(score, bool) or score not in (0, 1, 0.0, 1.0):
         return False
     return isinstance(result.get('evaluation_status'), str) and bool(result.get('evaluation_status'))
+
+
+def _grounding(result):
+    """Expose whether grounding was used. Absence means it was not used."""
+    raw = result.get('grounding')
+    if not isinstance(raw, dict) or raw.get('enabled') is not True:
+        return {'enabled': False, 'proves_sql': False, 'estimated_api_cost': None}
+    knowledge = []
+    for item in raw.get('knowledge') or []:
+        if not isinstance(item, dict):
+            continue
+        knowledge.append({
+            'id': item.get('id') if isinstance(item.get('id'), str) else None,
+            'version': item.get('version') if isinstance(item.get('version'), int) else None,
+            'content_hash': item.get('content_hash') if isinstance(item.get('content_hash'), str) else None,
+            'title': item.get('title').strip()[:200] if isinstance(item.get('title'), str) else '',
+        })
+    return {
+        'enabled': True,
+        'datasource_id': raw.get('datasource_id') if isinstance(raw.get('datasource_id'), str) else None,
+        'fingerprint': raw.get('fingerprint') if isinstance(raw.get('fingerprint'), str) else None,
+        'matched_tables': [name for name in raw.get('matched_tables') or [] if isinstance(name, str)][:8],
+        'matched_columns': [name for name in raw.get('matched_columns') or [] if isinstance(name, str)][:16],
+        'knowledge': knowledge[:5],
+        'knowledge_skipped': [item.get('id') for item in raw.get('knowledge_skipped') or []
+                              if isinstance(item, dict) and isinstance(item.get('id'), str)][:5],
+        'context_chars': raw.get('context_chars') if isinstance(raw.get('context_chars'), int) else None,
+        'retrieval_latency_ms': _latency(raw.get('retrieval_latency_ms')),
+        'agent_latency_ms': _latency(raw.get('agent_latency_ms')),
+        'retrieval_cache': raw.get('retrieval_cache') if raw.get('retrieval_cache') in ('hit', 'miss') else None,
+        'proves_sql': False,
+        'estimated_api_cost': None,
+    }
+
+
+def _latency(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+        return None
+    return round(float(value), 1)
 
 
 def _error_summary(state, result, feedback, task_error):

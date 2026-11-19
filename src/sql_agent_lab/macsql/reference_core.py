@@ -129,6 +129,7 @@ class ReferenceGraphAgent:
             raise ValueError(f"models must contain exactly {ROLES}, with model-name strings")
         self.models = dict(models)
         self.config = config
+        self.grounding_block = ''
         graph = StateGraph(WorkflowState)
         graph.add_node("select_schema", self._select)
         graph.add_node("decompose", self._decompose)

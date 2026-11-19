@@ -318,6 +318,7 @@ class Observatory:
         run_id = self.start({
             'conversation_id': conversation.id,
             'question': payload.get('question', ''),
+            **({'use_grounding': payload['use_grounding']} if 'use_grounding' in payload else {}),
         })
         task = self.tasks.get(run_id, {})
         if task.get('persistence_error'):
@@ -370,6 +371,41 @@ class Observatory:
         self._source_record(source_id)
         from sql_agent_lab.workspace.knowledge import delete_knowledge
         return delete_knowledge(self._workspace(), self.workspace_db, source_id, knowledge_id)
+
+    def _prepare_grounding(self, question, payload):
+        """Retrieve only when the request explicitly asks. Default is off."""
+        enabled = _use_grounding(payload)
+        disabled = {'enabled': False, 'proves_sql': False, 'estimated_api_cost': None,
+                    'cost_status': 'not_recorded'}
+        if not enabled:
+            return {'grounding_enabled': False, 'grounding_block': '', 'grounding': disabled}
+        if self.workspace_db is None:
+            raise ValueError('Database grounding requires --workspace-db')
+        self._source_record(question.db_id)
+        started = time.perf_counter()
+        profile = self.refresh_profile(question.db_id)
+        from sql_agent_lab.workspace.grounding_context import render_grounding
+        from sql_agent_lab.workspace.knowledge import read_available_knowledge
+        from sql_agent_lab.workspace.retrieval import QUESTION_LIMIT, ground
+        documents, skipped = read_available_knowledge(
+            self._workspace(), self.workspace_db, question.db_id)
+        truncated = len(question.question) > QUESTION_LIMIT
+        bundle = ground(question.db_id, profile, documents, question.question[:QUESTION_LIMIT])
+        block, summary = render_grounding(bundle, skipped, question_truncated=truncated)
+        summary['retrieval_latency_ms'] = round((time.perf_counter() - started) * 1000, 1)
+        return {'grounding_enabled': True, 'grounding_block': block, 'grounding': summary}
+
+    def ground_source(self, source_id, payload):
+        """Refresh the catalog profile and retrieve names. Does not call the Agent."""
+        _reject_client_locations(payload)
+        question = payload.get('question', '')
+        if not isinstance(question, str) or not 1 <= len(question.strip()) <= 1000:
+            raise ValueError('question must be 1–1000 characters')
+        profile = self.refresh_profile(source_id)
+        from sql_agent_lab.workspace.knowledge import list_knowledge
+        from sql_agent_lab.workspace.retrieval import ground
+        documents = list_knowledge(self._workspace(), self.workspace_db, source_id)
+        return ground(source_id, profile, documents, question.strip())
 
     def source_context(self, source_id):
         """Stored profile plus user knowledge. Does not change the Agent prompt."""
@@ -468,6 +504,7 @@ class Observatory:
             if not isinstance(db, str) or db not in self.databases or not isinstance(text, str) or not 1 <= len(text.strip()) <= 4000:
                 raise ValueError('Choose a database and enter a question (maximum 4000 characters)')
             question, reference = Question('custom', db, text.strip()), None
+        prepared = self._prepare_grounding(question, payload)
         with self.lock:
             if self.active:
                 raise ValueError('A run is already active')
@@ -484,7 +521,11 @@ class Observatory:
                         'workflow_mode': 'optional_semantic_review' if payload.get('semantic_review') else 'execution_repair_only',
                         'max_repairs': 1,
                         'semantic_output_tokens': 1600,
-                        'cloud_api_calls': 0}
+                        'cloud_api_calls': 0,
+                        'grounding_enabled': prepared['grounding_enabled'],
+                        'grounding': prepared['grounding']}
+            if prepared['grounding_block']:
+                manifest['grounding_block'] = prepared['grounding_block']
             (path/'manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf8')
             try:
                 self._save_task(run_id, new_task())
@@ -530,10 +571,18 @@ class Observatory:
             writer(event)
             self._observe_stage(run_id, event)
         result = {'status': 'failed', 'score': None, 'cloud_api_calls': 0}
+        agent_latency_ms = None
         try:
             if self.stop.is_set():
                 raise Stopped('Stopped before the next tool call')
             emit({'event': 'run_preparing'})
+            if manifest.get('grounding_enabled'):
+                emit({'event': 'grounding_attached', 'grounding_enabled': True,
+                      **{key: manifest['grounding'][key] for key in manifest.get('grounding', {})
+                         if key != 'proves_sql'},
+                      'model_call': False})
+            else:
+                emit({'event': 'grounding_skipped', 'grounding_enabled': False, 'model_call': False})
             db = self.databases[question.db_id]
             before = sha256(db)
             # Preserve pinning for BIRD sources, including custom questions on them.
@@ -548,7 +597,11 @@ class Observatory:
                 config = WorkflowConfig(observed, model, context=ContextPolicy(input_budget=14000,
                     context_window=16384), trace=emit, schema_retrieval=manifest['schema_retrieval'],
                     value_lookup=manifest['schema_retrieval'], semantic_review=manifest.get('semantic_review', False))
-                sql = ReferenceMacSQLAgent({role: 'qwen3:4b-instruct' for role in ROLES}, config=config).run(question)
+                agent = ReferenceMacSQLAgent({role: 'qwen3:4b-instruct' for role in ROLES}, config=config)
+                agent.grounding_block = manifest.get('grounding_block') or ''
+                agent_started = time.perf_counter()
+                sql = agent.run(question)
+                agent_latency_ms = round((time.perf_counter() - agent_started) * 1000, 1)
                 if self.stop.is_set():
                     raise Stopped('Stopped after the scheduled operation completed')
                 feedback = raw.execute_sql_readonly(question.db_id, sql)
@@ -586,6 +639,13 @@ class Observatory:
             result['semantic_guard'] = next((e for e in reversed(records)
                                              if e['event']=='semantic_revision_guard'), None)
             result['elapsed_seconds'] = time.monotonic() - started
+            grounding = dict(manifest.get('grounding') or {})
+            grounding['enabled'] = bool(manifest.get('grounding_enabled'))
+            grounding['proves_sql'] = False
+            grounding['estimated_api_cost'] = None
+            if grounding['enabled']:
+                grounding['agent_latency_ms'] = agent_latency_ms
+            result['grounding'] = grounding
             emit({'event': 'run_finished', **result})
             write_json_atomic(path/'result.json', result)
         return result
@@ -645,6 +705,15 @@ _CLIENT_LOCATIONS = frozenset({
 })
 
 
+def _use_grounding(payload):
+    if not isinstance(payload, dict) or 'use_grounding' not in payload:
+        return False
+    value = payload['use_grounding']
+    if not isinstance(value, bool):
+        raise ValueError('use_grounding must be true or false')
+    return value
+
+
 def _reject_client_locations(payload):
     if not isinstance(payload, dict):
         raise ValueError('Expected a JSON object')
@@ -658,7 +727,7 @@ def _match_source(path):
     if not path.startswith(prefix):
         return None
     parts = path[len(prefix):].split('/')
-    if len(parts) == 2 and parts[0] and parts[1] in ('profile', 'knowledge', 'context'):
+    if len(parts) == 2 and parts[0] and parts[1] in ('profile', 'knowledge', 'context', 'grounding'):
         return parts[0], parts[1], None
     if len(parts) == 3 and parts[1] == 'knowledge' and parts[0] and parts[2]:
         return parts[0], 'knowledge_item', parts[2]
@@ -765,6 +834,10 @@ def make_handler(app):
                     if app.workspace_db is None:
                         return self.send({'error': 'Not found'}, 404)
                     return self.send(app.add_source_knowledge(source[0], payload))
+                if source is not None and source[1] == 'grounding':
+                    if app.workspace_db is None:
+                        return self.send({'error': 'Not found'}, 404)
+                    return self.send(app.ground_source(source[0], payload))
                 kind, conversation_id = _match_conversation(path)
                 if kind in ('collection', 'messages'):
                     if app.workspace_db is None:

@@ -66,6 +66,22 @@ Same body as create. Each successful update increments `version`. The hash chang
 
 Returns the saved profile and the knowledge documents for that source only. A later database-introduction step can read this object. It must still treat knowledge as unverified user text and must not append it to the current Agent prompt unless that change is explicit.
 
+## POST /api/sources/{datasource_id}/grounding
+
+```json
+{ "question": "customer name for each order" }
+```
+
+Returns tables, columns, declared foreign keys, and knowledge documents that match the question by name or keyword. The match reasons are included. Schema hits are catalog facts. Knowledge hits keep `id`, `version`, `content_hash`, `provenance`, and `verification` (`user_provided_unverified`). A document is never returned with `treat_as_instruction` true, even when its text looks like an instruction.
+
+The question limit is 1,000 characters. At most 8 tables, 8 columns per table, and 5 knowledge excerpts are returned. An excerpt is at most 400 characters. An empty knowledge library or a question with no name overlap returns empty lists. Results are cached by schema fingerprint, knowledge version, and question. A schema or knowledge change misses that cache. This route does not read business rows and does not call the Agent.
+
+## Conversation grounding
+
+`POST /api/conversations/{id}/messages` accepts an optional boolean `use_grounding`. Omitting it, or sending `false`, keeps the previous execution path and does not call grounding retrieval.
+
+`true` retrieves the bound data source only, builds a bounded untrusted reference block, and appends that block after the existing role prompt. The Selector, Decomposer, and Refiner prompt text is unchanged. User knowledge stays labeled unverified and cannot override system rules. The saved run records matched names, knowledge ids, versions, hashes, the schema fingerprint, context size, and retrieval latency. It does not record an API cost unless a real price is available. Grounding evidence does not prove that the SQL is correct.
+
 ## GET /api/sources/{datasource_id}/knowledge/{id}
 
 Returns one document. A missing file or a file that does not match its hash is an error, not an empty document.

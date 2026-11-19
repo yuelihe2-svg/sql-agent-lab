@@ -93,7 +93,8 @@
         error: view.error || null,
         elapsed: view.elapsed_seconds,
         tokens: view.tokens || { input: null, output: null },
-        evaluated: view.evaluated === true
+        evaluated: view.evaluated === true,
+        grounding: view.grounding && view.grounding.enabled === true ? view.grounding : { enabled: false }
       });
     });
     return items;
@@ -246,6 +247,10 @@
           tables: schemaTables(state.overview.profile),
           knowledge: knowledgeCards(state.overview.knowledge, state.datasourceId)
         }, handlers));
+        nodes.thread.append(renderRetrievalForm(doc, handlers));
+        if (state.grounding && state.grounding.datasource_id === state.datasourceId) {
+          nodes.thread.append(renderGrounding(doc, state.grounding));
+        }
         nodes.thread.append(renderKnowledgeForm(doc, state, handlers));
       }
       nodes.live.textContent = '数据库介绍';
@@ -274,6 +279,11 @@
     const busy = Boolean(state.sending || state.activeRunId);
     nodes.send.disabled = busy || !state.workspace || !state.sources.length;
     nodes.send.textContent = busy ? '处理中…' : '发送';
+    const control = groundingControl(state.workspace);
+    nodes.groundingInput.disabled = !control.enabled || busy;
+    if (!control.enabled) nodes.groundingInput.checked = false;
+    nodes.groundingNote.hidden = !control.note;
+    nodes.groundingNote.textContent = control.note;
     const latest = turns.filter(function (item) { return item.role === 'assistant'; }).pop();
     nodes.live.textContent = latest ? statusLabel(latest.state) : '';
     renderDetails(doc, nodes, state, source, turns);
@@ -294,6 +304,14 @@
     nodes.tokenOut.textContent = formatTokens(selected && selected.tokens ? selected.tokens.output : null);
     nodes.duration.textContent = formatElapsed(selected ? selected.elapsed : null);
     nodes.usageNote.textContent = '没有记录时显示未记录。执行成功不等于评测通过。';
+    const grounding = selected && selected.grounding && selected.grounding.enabled === true ? selected.grounding : null;
+    nodes.groundingStatus.textContent = grounding
+      ? ('使用了数据库接地。匹配表：' + ((grounding.matched_tables || []).join('、') || '无')
+        + '。知识文档：' + ((grounding.knowledge || []).map(function (item) {
+          return (item.title || item.id) + ' v' + item.version;
+        }).join('、') || '无')
+        + '。这不是 SQL 正确性的证明。')
+      : '未使用数据库接地。';
     nodes.trace.replaceChildren();
     if (selected) {
       const li = el(doc, 'li');
@@ -308,6 +326,19 @@
     if (index <= 0) return '';
     const previous = turns[index - 1];
     return previous && previous.role === 'user' ? previous.body : '';
+  }
+
+  function groundingControl(workspace) {
+    if (workspace === true) return { enabled: true, label: 'Use Database Grounding', note: '' };
+    return {
+      enabled: false,
+      label: 'Use Database Grounding',
+      note: '未启用 Workspace，不能使用数据库接地。'
+    };
+  }
+
+  function messagePayload(question, useGrounding) {
+    return { question: question, use_grounding: useGrounding === true };
   }
 
   function overviewError(status) {
@@ -493,6 +524,65 @@
     return form;
   }
 
+  function renderRetrievalForm(doc, handlers) {
+    const form = el(doc, 'form', 'overview-block');
+    form.append(
+      el(doc, 'h2', null, '检索预览'),
+      el(doc, 'p', 'quiet', '按当前数据源的目录和业务知识做匹配。不会执行 SQL，也不会把结果交给 Agent。')
+    );
+    const input = el(doc, 'input');
+    input.setAttribute('aria-label', '检索问题');
+    input.maxLength = 1000;
+    const button = el(doc, 'button', 'send', '查看匹配');
+    button.type = 'submit';
+    form.append(input, button);
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      handlers.preview(input.value);
+    });
+    return form;
+  }
+
+  function renderGrounding(doc, result) {
+    const section = el(doc, 'section', 'overview-block');
+    section.append(el(doc, 'h2', null, '这次问题匹配到的内容'), el(doc, 'p', 'prose', result.question));
+    if (!(result.tables || []).length && !(result.knowledge || []).length) {
+      section.append(el(doc, 'p', 'prose', '没有匹配到表、字段或知识。'));
+    }
+    (result.tables || []).forEach(function (table) {
+      const card = el(doc, 'article', 'message');
+      const columns = (table.columns || []).map(function (column) {
+        return column.name + '（' + column.reason + '）';
+      }).join('、');
+      card.append(
+        el(doc, 'p', 'prose', '表 ' + table.name),
+        el(doc, 'p', 'quiet', 'Schema 事实 · ' + table.reason),
+        el(doc, 'p', 'prose', columns ? ('字段 ' + columns) : '没有单独命中的字段')
+      );
+      section.append(card);
+    });
+    (result.relationships || []).forEach(function (item) {
+      section.append(el(doc, 'p', 'quiet',
+        '声明的外键：' + item.from_table + '.' + (item.from_columns || []).join(',') +
+        ' → ' + item.to_table + '.' + (item.to_columns || []).join(',') + '。' + item.reason));
+    });
+    (result.knowledge || []).forEach(function (item) {
+      const card = el(doc, 'article', 'message');
+      card.append(
+        el(doc, 'p', 'prose', item.title),
+        el(doc, 'p', 'unverified', 'User-provided / Unverified'),
+        el(doc, 'p', 'quiet', '用户提供的定义 · 版本 ' + item.version + ' · ' + item.reason),
+        el(doc, 'p', 'prose', item.excerpt || '')
+      );
+      if (item.instruction_like_text) {
+        card.append(el(doc, 'p', 'quiet', '这段文字仍只是用户说明，不会当作系统指令。'));
+      }
+      section.append(card);
+    });
+    section.append(el(doc, 'p', 'quiet', '表和字段来自数据库目录。知识不能覆盖系统规则。'));
+    return section;
+  }
+
   function createState() {
     return {
       sources: [],
@@ -508,7 +598,8 @@
       sending: false,
       view: 'chat',
       overview: null,
-      draft: null
+      draft: null,
+      grounding: null
     };
   }
 
@@ -558,6 +649,12 @@
     const sourceLine = el(doc, 'p', 'composer-source');
     sourceLine.append(doc.createTextNode('数据源 '), el(doc, 'strong'));
     const sourceName = sourceLine.querySelector('strong');
+    const groundingLabel = el(doc, 'label', 'grounding-toggle');
+    const groundingInput = el(doc, 'input');
+    groundingInput.type = 'checkbox';
+    groundingInput.checked = false;
+    groundingLabel.append(groundingInput, doc.createTextNode(' Use Database Grounding'));
+    const groundingNote = el(doc, 'p', 'quiet');
     const box = el(doc, 'div', 'composer-box');
     const question = el(doc, 'textarea');
     question.id = 'question';
@@ -573,7 +670,7 @@
     box.append(question, actions);
     const error = el(doc, 'p', 'form-error');
     error.setAttribute('role', 'alert');
-    form.append(sourceLine, box, el(doc, 'p', 'hint', 'Ctrl + Enter 发送'), error);
+    form.append(sourceLine, groundingLabel, groundingNote, box, el(doc, 'p', 'hint', 'Ctrl + Enter 发送'), error);
     chat.append(head, banner, live, thread, form);
 
     const details = el(doc, 'aside', 'details');
@@ -603,12 +700,15 @@
     const duration = metric('耗时');
     const usageNote = el(doc, 'p', 'quiet');
     metricBlock.append(metrics, usageNote);
+    const groundingBlock = el(doc, 'div', 'detail-block');
+    const groundingStatus = el(doc, 'p', 'prose', '未使用数据库接地。');
+    groundingBlock.append(el(doc, 'h2', null, 'Grounding'), groundingStatus);
     const traceBlock = el(doc, 'div', 'detail-block');
     const traceDetails = el(doc, 'details');
     const trace = el(doc, 'ol', 'trace');
     traceDetails.append(el(doc, 'summary', null, '当前阶段'), trace);
     traceBlock.append(traceDetails);
-    details.append(sourceBlock, questionBlock, sqlBlock, stateBlock, metricBlock, traceBlock);
+    details.append(sourceBlock, questionBlock, sqlBlock, stateBlock, metricBlock, groundingBlock, traceBlock);
     shell.append(sidebar, chat, details);
     app.replaceChildren(shell);
 
@@ -619,7 +719,8 @@
       send: send, live: live, form: form, detailSource: sourceBlock.querySelector('p'),
       detailQuestion: questionBlock.querySelector('p'), sql: sql,
       runState: stateBlock.querySelector('p'), tokenIn: tokenIn, tokenOut: tokenOut,
-      duration: duration, usageNote: usageNote, trace: trace
+      duration: duration, usageNote: usageNote, trace: trace,
+      groundingInput: groundingInput, groundingNote: groundingNote, groundingStatus: groundingStatus
     };
 
     function paint() { render(doc, state, nodes, handlers); }
@@ -724,6 +825,7 @@
 
     async function loadOverview() {
       state.overviewError = '';
+      state.grounding = null;
       try {
         const id = encodeURIComponent(state.datasourceId);
         const profile = await request('/api/sources/' + id + '/profile');
@@ -765,6 +867,7 @@
         if (state.view === 'overview') {
           state.overview = null;
           state.draft = null;
+          state.grounding = null;
           loadOverview();
           return;
         }
@@ -797,6 +900,21 @@
           : '/api/sources/' + id + '/knowledge';
         request(path, { title: draft.title.trim(), format: draft.format, body: draft.body }, draft.id ? 'PUT' : 'POST')
           .then(function () { state.draft = null; return loadOverview(); })
+          .catch(function (error) { showError(error.message); paint(); });
+      },
+      preview: function (text) {
+        const question = String(text || '').trim();
+        if (!question || !state.datasourceId) return;
+        const id = encodeURIComponent(state.datasourceId);
+        request('/api/sources/' + id + '/grounding', { question: question }, 'POST')
+          .then(function (result) {
+            if (result.datasource_id !== state.datasourceId) {
+              throw Object.assign(new Error('数据源不一致'), { status: 400 });
+            }
+            state.grounding = result;
+            state.error = '';
+            paint();
+          })
           .catch(function (error) { showError(error.message); paint(); });
       }
     };
@@ -844,7 +962,8 @@
       state.sending = true;
       state.error = '';
       paint();
-      request('/api/conversations/' + encodeURIComponent(state.detail.conversation.id) + '/messages', { question: text })
+      request('/api/conversations/' + encodeURIComponent(state.detail.conversation.id) + '/messages',
+        messagePayload(text, nodes.groundingInput.checked))
         .then(function (started) {
           question.value = '';
           state.activeRunId = started.id;
@@ -876,10 +995,13 @@
     statusLabel: statusLabel,
     stageLabel: stageLabel,
     overviewError: overviewError,
+    groundingControl: groundingControl,
+    messagePayload: messagePayload,
     overviewSummary: overviewSummary,
     schemaTables: schemaTables,
     knowledgeCards: knowledgeCards,
     renderOverview: renderOverview,
+    renderGrounding: renderGrounding,
     createState: createState,
     mount: mount
   };
