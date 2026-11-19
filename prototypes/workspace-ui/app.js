@@ -226,6 +226,33 @@
     nodes.currentSource.textContent = source ? source.name : '未选择';
     nodes.currentMeta.textContent = source ? (source.read_only ? '只读 SQLite' : source.kind) : '';
 
+    nodes.form.hidden = state.view === 'overview';
+    nodes.toggle.hidden = state.view === 'overview';
+    nodes.details.hidden = state.view === 'overview' || !state.detailsOpen;
+    if (state.view === 'overview') {
+      nodes.title.textContent = '数据库介绍';
+      nodes.subtitle.textContent = source ? source.name : '';
+      doc.title = '数据库介绍 · SQL Agent Studio';
+      nodes.thread.replaceChildren();
+      if (!state.workspace) {
+        nodes.thread.append(el(doc, 'div', 'empty-thread', state.notice || overviewError(404)));
+      } else if (state.overviewError) {
+        nodes.thread.append(el(doc, 'div', 'empty-thread', state.overviewError));
+      } else if (!state.overview) {
+        nodes.thread.append(el(doc, 'div', 'empty-thread', '正在读取数据库介绍。'));
+      } else {
+        nodes.thread.append(renderOverview(doc, {
+          summary: overviewSummary(state.overview.profile),
+          tables: schemaTables(state.overview.profile),
+          knowledge: knowledgeCards(state.overview.knowledge, state.datasourceId)
+        }, handlers));
+        nodes.thread.append(renderKnowledgeForm(doc, state, handlers));
+      }
+      nodes.live.textContent = '数据库介绍';
+      nodes.sourceName.textContent = source ? source.name : '未选择';
+      nodes.error.textContent = state.error || '';
+      return;
+    }
     const turns = conversation ? pairTurns(conversation) : [];
     nodes.thread.replaceChildren();
     if (!state.workspace || !state.sources.length) {
@@ -283,6 +310,189 @@
     return previous && previous.role === 'user' ? previous.body : '';
   }
 
+  function overviewError(status) {
+    if (status === 404) return '未启用 Workspace。请带 --workspace-db 重新启动后刷新。';
+    if (status === 400) return '无法读取这个数据源的介绍。';
+    return '无法读取数据库介绍。';
+  }
+
+  function overviewSummary(profile) {
+    const tables = profile && Array.isArray(profile.tables) ? profile.tables : [];
+    const coverage = profile && profile.coverage || {};
+    return {
+      name: profile && profile.name || '',
+      kind: profile && profile.kind || '',
+      tableCount: Number.isFinite(coverage.table_count) ? coverage.table_count : tables.length,
+      fingerprint: profile && profile.fingerprint || '',
+      extractedAt: profile && profile.extracted_at || null,
+      schemaFacts: 'catalog',
+      businessDefinitions: 'not_inferred'
+    };
+  }
+
+  function schemaTables(profile) {
+    return (profile && profile.tables || []).map(function (table) {
+      return {
+        name: table.name,
+        columns: (table.columns || []).map(function (column) {
+          return { name: column.name, type: column.type || '', primaryKey: column.primary_key === true };
+        }),
+        primaryKey: Array.isArray(table.primary_key) ? table.primary_key.slice() : [],
+        foreignKeys: (table.foreign_keys || []).filter(function (key) {
+          return key && key.origin === 'declared_foreign_key';
+        }).map(function (key) {
+          return {
+            from: (key.from_columns || []).join(', '),
+            to: (key.to_table || '') + '(' + (key.to_columns || []).join(', ') + ')'
+          };
+        })
+      };
+    });
+  }
+
+  function knowledgeCards(documents, datasourceId) {
+    return (documents || []).filter(function (item) {
+      return item && item.datasource_id === datasourceId;
+    }).map(function (item) {
+      return {
+        id: item.id,
+        title: item.title,
+        format: item.format,
+        version: item.version,
+        provenance: item.provenance === 'user' ? 'user' : '',
+        verification: 'user_provided_unverified',
+        body: item.body || ''
+      };
+    });
+  }
+
+  function renderOverview(doc, model, handlers) {
+    const root = el(doc, 'div', 'overview');
+    const summary = model.summary;
+    const head = el(doc, 'section', 'overview-block');
+    head.append(
+      el(doc, 'h2', null, '数据库摘要'),
+      el(doc, 'p', 'prose', summary.name + ' · ' + (summary.kind || 'sqlite')),
+      el(doc, 'p', 'prose', '表 ' + summary.tableCount + ' 张。目录事实来自 Schema，没有读取业务数据行，也没有推断业务含义。')
+    );
+    if (summary.fingerprint) head.append(el(doc, 'p', 'quiet', '指纹 ' + summary.fingerprint));
+    head.append(el(doc, 'p', 'quiet', '抽取时间 ' + (summary.extractedAt ? formatWhen(summary.extractedAt) : '未记录')));
+    root.append(head);
+
+    const schema = el(doc, 'section', 'overview-block');
+    schema.append(el(doc, 'h2', null, '表结构'));
+    if (!model.tables.length) {
+      schema.append(el(doc, 'p', 'prose', '这个数据库没有用户表。'));
+    }
+    model.tables.forEach(function (table) {
+      const details = el(doc, 'details', 'schema-table');
+      details.append(el(doc, 'summary', null, table.name));
+      if (table.columns.length) {
+        const wrap = el(doc, 'div', 'table-wrap');
+        const grid = el(doc, 'table');
+        const headRow = el(doc, 'tr');
+        ['列', '类型', '主键'].forEach(function (label) {
+          const cell = el(doc, 'th', null, label);
+          cell.scope = 'col';
+          headRow.append(cell);
+        });
+        const thead = el(doc, 'thead');
+        thead.append(headRow);
+        const tbody = el(doc, 'tbody');
+        table.columns.forEach(function (column) {
+          const line = el(doc, 'tr');
+          line.append(
+            el(doc, 'td', null, column.name),
+            el(doc, 'td', null, column.type || '未声明'),
+            el(doc, 'td', null, column.primaryKey ? '是' : '')
+          );
+          tbody.append(line);
+        });
+        grid.append(thead, tbody);
+        wrap.append(grid);
+        details.append(wrap);
+      } else {
+        details.append(el(doc, 'p', 'quiet', '没有列。'));
+      }
+      details.append(el(doc, 'p', 'quiet', table.primaryKey.length
+        ? '声明的主键：' + table.primaryKey.join(', ')
+        : '没有声明主键。'));
+      if (table.foreignKeys.length) {
+        table.foreignKeys.forEach(function (key) {
+          details.append(el(doc, 'p', 'quiet', '声明的外键：' + key.from + ' → ' + key.to));
+        });
+      } else {
+        details.append(el(doc, 'p', 'quiet', '没有声明外键。'));
+      }
+      schema.append(details);
+    });
+    root.append(schema);
+
+    const knowledge = el(doc, 'section', 'overview-block');
+    knowledge.append(
+      el(doc, 'h2', null, '业务知识'),
+      el(doc, 'p', 'unverified', '用户提供，未经核验。这些说明不是数据库已经核对过的事实。')
+    );
+    if (!model.knowledge.length) {
+      knowledge.append(el(doc, 'p', 'prose', '还没有业务知识。写下来的内容只属于当前数据源。'));
+    }
+    model.knowledge.forEach(function (item) {
+      const card = el(doc, 'article', 'message');
+      card.append(
+        el(doc, 'p', 'prose', item.title),
+        el(doc, 'p', 'quiet', '版本 ' + item.version + ' · 来源：用户提供'),
+        el(doc, 'p', 'unverified', 'User-provided / Unverified'),
+        el(doc, 'p', 'prose', item.body)
+      );
+      const edit = el(doc, 'button', 'text-action', '编辑');
+      edit.type = 'button';
+      edit.addEventListener('click', function () { handlers.edit(item); });
+      const remove = el(doc, 'button', 'text-action', '删除');
+      remove.type = 'button';
+      remove.addEventListener('click', function () { handlers.remove(item); });
+      card.append(edit, remove);
+      knowledge.append(card);
+    });
+    root.append(knowledge);
+    return root;
+  }
+
+  function renderKnowledgeForm(doc, state, handlers) {
+    const draft = state.draft || { title: '', format: 'markdown', body: '', id: null };
+    const form = el(doc, 'form', 'overview-block');
+    form.append(el(doc, 'h2', null, draft.id ? '编辑知识' : '添加知识'));
+    const title = el(doc, 'input');
+    title.value = draft.title;
+    title.maxLength = 200;
+    title.required = true;
+    title.setAttribute('aria-label', '知识标题');
+    const format = el(doc, 'select');
+    format.setAttribute('aria-label', '知识格式');
+    [['markdown', 'Markdown'], ['text', '纯文本'], ['json', 'JSON']].forEach(function (pair) {
+      const option = el(doc, 'option', null, pair[1]);
+      option.value = pair[0];
+      if (pair[0] === draft.format) option.selected = true;
+      format.append(option);
+    });
+    const body = el(doc, 'textarea');
+    body.value = draft.body;
+    body.maxLength = 24000;
+    body.setAttribute('aria-label', '知识正文');
+    const save = el(doc, 'button', 'send', draft.id ? '保存修改' : '添加知识');
+    save.type = 'submit';
+    form.append(title, format, body, save);
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      handlers.saveKnowledge({
+        id: draft.id,
+        title: title.value,
+        format: format.value,
+        body: body.value
+      });
+    });
+    return form;
+  }
+
   function createState() {
     return {
       sources: [],
@@ -295,7 +505,10 @@
       workspace: false,
       notice: '',
       error: '',
-      sending: false
+      sending: false,
+      view: 'chat',
+      overview: null,
+      draft: null
     };
   }
 
@@ -314,6 +527,8 @@
     sourceList.setAttribute('aria-label', '数据源');
     const newer = el(doc, 'button', 'new-chat', '新建会话');
     newer.type = 'button';
+    const overviewButton = el(doc, 'button', 'new-chat', '数据库介绍');
+    overviewButton.type = 'button';
     const talkLabel = el(doc, 'p', 'side-label', '对话');
     const talkList = el(doc, 'nav', 'talk-list');
     talkList.setAttribute('aria-label', '对话');
@@ -321,7 +536,7 @@
     foot.append(el(doc, 'p', 'quiet', '当前数据源'), el(doc, 'p'), el(doc, 'p', 'quiet'));
     const currentSource = foot.querySelector('p:nth-child(2)');
     const currentMeta = foot.querySelector('p:nth-child(3)');
-    sidebar.append(brand, sourceLabel, sourceList, newer, talkLabel, talkList, foot);
+    sidebar.append(brand, sourceLabel, sourceList, newer, overviewButton, talkLabel, talkList, foot);
 
     const chat = el(doc, 'main', 'chat');
     chat.id = 'conversation';
@@ -401,7 +616,7 @@
       details: details, toggle: toggle, title: title, subtitle: subtitle, banner: banner,
       sourceList: sourceList, talkList: talkList, currentSource: currentSource,
       currentMeta: currentMeta, thread: thread, sourceName: sourceName, error: error,
-      send: send, live: live, detailSource: sourceBlock.querySelector('p'),
+      send: send, live: live, form: form, detailSource: sourceBlock.querySelector('p'),
       detailQuestion: questionBlock.querySelector('p'), sql: sql,
       runState: stateBlock.querySelector('p'), tokenIn: tokenIn, tokenOut: tokenOut,
       duration: duration, usageNote: usageNote, trace: trace
@@ -414,10 +629,11 @@
       nodes.error.textContent = state.error;
     }
 
-    async function request(path, payload) {
-      if (transport) return transport(path, payload);
+    async function request(path, payload, method) {
+      const verb = method || (payload === undefined ? 'GET' : 'POST');
+      if (transport) return transport(path, payload, verb);
       const response = await fetch(path, {
-        method: payload === undefined ? 'GET' : 'POST',
+        method: verb,
         headers: payload === undefined ? {} : { 'Content-Type': 'application/json' },
         body: payload === undefined ? undefined : JSON.stringify(payload)
       });
@@ -431,9 +647,19 @@
       return data;
     }
 
+    function remember() {
+      if (typeof history === 'undefined' || !history.replaceState) return;
+      const params = new URLSearchParams();
+      if (state.datasourceId) params.set('datasource', state.datasourceId);
+      if (state.view === 'overview') params.set('view', 'overview');
+      else if (state.detail) params.set('conversation', state.detail.conversation.id);
+      history.replaceState(null, '', '/workspace/?' + params.toString());
+    }
+
     function applyDetail(detail) {
       state.detail = detail;
       state.datasourceId = detail.conversation.datasource_id;
+      state.view = 'chat';
       const turns = pairTurns(detail);
       const assistants = turns.filter(function (item) { return item.role === 'assistant'; });
       const still = assistants.some(function (item) { return item.id === state.selectedRunId; });
@@ -442,12 +668,7 @@
         return item.state === 'running' || item.state === 'stopping';
       });
       state.activeRunId = active ? active.id : null;
-      if (typeof history !== 'undefined' && history.replaceState) {
-        const params = new URLSearchParams();
-        params.set('datasource', state.datasourceId);
-        params.set('conversation', detail.conversation.id);
-        history.replaceState(null, '', '/workspace/?' + params.toString());
-      }
+      remember();
     }
 
     async function openConversation(id) {
@@ -488,13 +709,34 @@
           const requested = params.get('conversation');
           const known = state.conversations.some(function (item) { return item.id === requested; });
           const first = talksFor(state)[0];
-          if (known) await openConversation(requested);
+          if (params.get('view') === 'overview') {
+            state.view = 'overview';
+            await loadOverview();
+          } else if (known) await openConversation(requested);
           else if (first) await openConversation(first.id);
         }
       } catch (error) {
         state.notice = '无法连接本地服务。确认服务已启动后刷新此页。';
         showError(error.message);
       }
+      paint();
+    }
+
+    async function loadOverview() {
+      state.overviewError = '';
+      try {
+        const id = encodeURIComponent(state.datasourceId);
+        const profile = await request('/api/sources/' + id + '/profile');
+        const context = await request('/api/sources/' + id + '/context');
+        if (context.datasource_id !== state.datasourceId) {
+          throw Object.assign(new Error('数据源不一致'), { status: 400 });
+        }
+        state.overview = { profile: profile, knowledge: context.knowledge || [] };
+      } catch (error) {
+        state.overview = null;
+        state.overviewError = overviewError(error.status);
+      }
+      remember();
       paint();
     }
 
@@ -520,6 +762,12 @@
         state.detail = null;
         state.selectedRunId = null;
         state.error = '';
+        if (state.view === 'overview') {
+          state.overview = null;
+          state.draft = null;
+          loadOverview();
+          return;
+        }
         const first = talksFor(state)[0];
         if (first) openConversation(first.id).catch(function (error) { showError(error.message); paint(); });
         else paint();
@@ -531,8 +779,39 @@
           return;
         }
         openConversation(id).catch(function (error) { showError(error.message); paint(); });
+      },
+      edit: function (item) {
+        state.draft = { id: item.id, title: item.title, format: item.format, body: item.body };
+        paint();
+      },
+      remove: function (item) {
+        const id = encodeURIComponent(state.datasourceId);
+        request('/api/sources/' + id + '/knowledge/' + encodeURIComponent(item.id), undefined, 'DELETE')
+          .then(function () { state.draft = null; return loadOverview(); })
+          .catch(function (error) { showError(error.message); paint(); });
+      },
+      saveKnowledge: function (draft) {
+        const id = encodeURIComponent(state.datasourceId);
+        const path = draft.id
+          ? '/api/sources/' + id + '/knowledge/' + encodeURIComponent(draft.id)
+          : '/api/sources/' + id + '/knowledge';
+        request(path, { title: draft.title.trim(), format: draft.format, body: draft.body }, draft.id ? 'PUT' : 'POST')
+          .then(function () { state.draft = null; return loadOverview(); })
+          .catch(function (error) { showError(error.message); paint(); });
       }
     };
+
+    overviewButton.addEventListener('click', function () {
+      if (!state.workspace || !state.datasourceId) {
+        showError(state.notice || overviewError(404));
+        paint();
+        return;
+      }
+      state.view = 'overview';
+      state.error = '';
+      state.draft = null;
+      loadOverview();
+    });
 
     newer.addEventListener('click', function () {
       if (!state.workspace || !state.datasourceId) {
@@ -596,6 +875,11 @@
     formatTokens: formatTokens,
     statusLabel: statusLabel,
     stageLabel: stageLabel,
+    overviewError: overviewError,
+    overviewSummary: overviewSummary,
+    schemaTables: schemaTables,
+    knowledgeCards: knowledgeCards,
+    renderOverview: renderOverview,
     createState: createState,
     mount: mount
   };

@@ -58,4 +58,89 @@ assert.equal(studio.displaySummary({
   result: { summary: '「n」的查询结果是 42。', evaluated: false }
 }).includes('100'), false);
 
+function fakeDoc() {
+  function make(tag) {
+    return {
+      tagName: tag,
+      className: '',
+      children: [],
+      hidden: false,
+      value: '',
+      _text: '',
+      append() {
+        for (let i = 0; i < arguments.length; i += 1) this.children.push(arguments[i]);
+      },
+      setAttribute() {},
+      addEventListener() {},
+      get textContent() { return this._text; },
+      set textContent(value) { this._text = value == null ? '' : String(value); }
+    };
+  }
+  return { createElement: make, createTextNode(text) { const node = make('#text'); node.textContent = text; return node; } };
+}
+
+function texts(node, acc) {
+  acc = acc || [];
+  if (node && node.textContent && (!node.children || !node.children.length)) acc.push(node.textContent);
+  (node && node.children || []).forEach(function (child) { texts(child, acc); });
+  return acc;
+}
+
+assert.equal(studio.overviewError(404).includes('--workspace-db'), true);
+assert.equal(studio.overviewError(400).includes('无法读取'), true);
+const empty = studio.overviewSummary({ name: 'Empty', kind: 'sqlite', tables: [], coverage: { table_count: 0 }, fingerprint: 'abc', extracted_at: null });
+assert.equal(empty.tableCount, 0);
+assert.equal(empty.businessDefinitions, 'not_inferred');
+assert.deepEqual(studio.schemaTables({ tables: [] }), []);
+const bare = studio.schemaTables({
+  tables: [{ name: 'notes', columns: [{ name: 'body', type: '', primary_key: false }], primary_key: [], foreign_keys: [] }]
+});
+assert.deepEqual(bare[0].primaryKey, []);
+assert.deepEqual(bare[0].foreignKeys, []);
+const declared = studio.schemaTables({
+  tables: [{
+    name: 'orders',
+    primary_key: ['id'],
+    columns: [{ name: 'id', type: 'INTEGER', primary_key: true }],
+    foreign_keys: [
+      { origin: 'declared_foreign_key', from_columns: ['customer_id'], to_table: 'customers', to_columns: ['id'] },
+      { origin: 'guessed', from_columns: ['name'], to_table: 'customers', to_columns: ['name'] }
+    ]
+  }]
+});
+assert.equal(declared[0].foreignKeys.length, 1);
+
+const shopDoc = { id: 'k1', datasource_id: 'shop', title: '<img src=x>', format: 'markdown', version: 2, provenance: 'user', body: 'Net revenue' };
+const cards = studio.knowledgeCards([shopDoc, { id: 'k2', datasource_id: 'archive', title: 'Other', version: 1, provenance: 'user', body: 'archive only' }], 'shop');
+assert.equal(cards.length, 1);
+assert.equal(cards[0].verification, 'user_provided_unverified');
+assert.equal(cards[0].version, 2);
+
+const view = studio.renderOverview(fakeDoc(), {
+  summary: studio.overviewSummary({
+    name: 'Shop', kind: 'sqlite', tables: [], coverage: { table_count: 0 },
+    fingerprint: 'abc', extracted_at: '2026-11-18T22:00:00+00:00'
+  }),
+  tables: bare,
+  knowledge: []
+}, { edit() {}, remove() {} });
+const shown = texts(view);
+assert.equal(shown.some(function (item) { return item.includes('没有用户表'); }), false);
+assert.equal(shown.some(function (item) { return item.includes('没有声明主键'); }), true);
+assert.equal(shown.some(function (item) { return item.includes('没有声明外键'); }), true);
+assert.equal(shown.some(function (item) { return item.includes('未经核验'); }), true);
+assert.equal(shown.some(function (item) { return item.includes('还没有业务知识'); }), true);
+assert.equal(shown.join('\n').includes('<img'), false);
+
+const hostile = studio.renderOverview(fakeDoc(), {
+  summary: empty,
+  tables: [],
+  knowledge: cards
+}, { edit() {}, remove() {} });
+const hostileText = texts(hostile).join('\n');
+assert.equal(hostileText.includes('<img src=x>'), true);
+assert.equal(hostileText.includes('版本 2'), true);
+assert.equal(hostileText.includes('archive only'), false);
+assert.equal(hostileText.includes('这个数据库没有用户表'), true);
+
 console.log('workspace ui checks passed');

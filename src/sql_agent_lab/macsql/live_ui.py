@@ -327,6 +327,61 @@ class Observatory:
             raise RuntimeError('Conversation was not saved')
         return {'id': run_id, 'conversation_id': conversation.id, 'message_id': run.user_message_id}
 
+    def refresh_profile(self, source_id):
+        source = self._source_record(source_id)
+        from sql_agent_lab.workspace.database import LOCAL_WORKSPACE_ID
+        from sql_agent_lab.workspace.profile import extract_profile, public_profile
+        extracted = extract_profile(self.databases[source.id])
+        extracted['extracted_at'] = datetime.now(timezone.utc).isoformat()
+        stored = {key: extracted[key] for key in (
+            'kind', 'tables', 'relationships', 'fingerprint', 'coverage')}
+        self._workspace().save_profile(
+            source.id, LOCAL_WORKSPACE_ID, extracted['fingerprint'], extracted['extracted_at'],
+            json.dumps(stored, ensure_ascii=False))
+        return public_profile(source, extracted)
+
+    def list_source_knowledge(self, source_id):
+        self._source_record(source_id)
+        from sql_agent_lab.workspace.knowledge import list_knowledge
+        return {'knowledge': list_knowledge(self._workspace(), self.workspace_db, source_id)}
+
+    def get_source_knowledge(self, source_id, knowledge_id):
+        self._source_record(source_id)
+        from sql_agent_lab.workspace.knowledge import read_knowledge
+        return read_knowledge(self._workspace(), self.workspace_db, source_id, knowledge_id)
+
+    def add_source_knowledge(self, source_id, payload):
+        self._source_record(source_id)
+        _reject_client_locations(payload)
+        from sql_agent_lab.workspace.knowledge import create_knowledge
+        return create_knowledge(
+            self._workspace(), self.workspace_db, source_id,
+            payload.get('title'), payload.get('format'), payload.get('body'))
+
+    def update_source_knowledge(self, source_id, knowledge_id, payload):
+        self._source_record(source_id)
+        _reject_client_locations(payload)
+        from sql_agent_lab.workspace.knowledge import update_knowledge
+        return update_knowledge(
+            self._workspace(), self.workspace_db, source_id, knowledge_id,
+            payload.get('title'), payload.get('format'), payload.get('body'))
+
+    def delete_source_knowledge(self, source_id, knowledge_id):
+        self._source_record(source_id)
+        from sql_agent_lab.workspace.knowledge import delete_knowledge
+        return delete_knowledge(self._workspace(), self.workspace_db, source_id, knowledge_id)
+
+    def source_context(self, source_id):
+        """Stored profile plus user knowledge. Does not change the Agent prompt."""
+        source = self._source_record(source_id)
+        from sql_agent_lab.workspace.context import read_context
+        return read_context(self._workspace(), self.workspace_db, source)
+
+    def _source_record(self, source_id):
+        if not isinstance(source_id, str) or source_id not in self.databases:
+            raise ValueError('Data source is not registered')
+        return self._workspace().get_data_source(source_id)
+
     def _workspace(self):
         if self.workspace_db is None:
             raise ValueError('Workspace database is not enabled')
@@ -585,6 +640,31 @@ def _match_conversation(path):
     return None, None
 
 
+_CLIENT_LOCATIONS = frozenset({
+    'path', 'paths', 'filename', 'file', 'directory', 'storage_key', 'uri', 'url',
+})
+
+
+def _reject_client_locations(payload):
+    if not isinstance(payload, dict):
+        raise ValueError('Expected a JSON object')
+    for key in payload:
+        if str(key).lower() in _CLIENT_LOCATIONS:
+            raise ValueError('A server path cannot be supplied')
+
+
+def _match_source(path):
+    prefix = '/api/sources/'
+    if not path.startswith(prefix):
+        return None
+    parts = path[len(prefix):].split('/')
+    if len(parts) == 2 and parts[0] and parts[1] in ('profile', 'knowledge', 'context'):
+        return parts[0], parts[1], None
+    if len(parts) == 3 and parts[1] == 'knowledge' and parts[0] and parts[2]:
+        return parts[0], 'knowledge_item', parts[2]
+    return None
+
+
 def make_handler(app):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
@@ -641,27 +721,51 @@ def make_handler(app):
                     if kind == 'collection':
                         return self.send(app.list_conversations())
                     return self.send(app.conversation_detail(conversation_id))
+                source = _match_source(url.path)
+                if source is not None:
+                    if app.workspace_db is None:
+                        return self.send({'error': 'Not found'}, 404)
+                    source_id, source_kind, knowledge_id = source
+                    if source_kind == 'profile':
+                        return self.send(app.refresh_profile(source_id))
+                    if source_kind == 'knowledge':
+                        return self.send(app.list_source_knowledge(source_id))
+                    if source_kind == 'knowledge_item':
+                        return self.send(app.get_source_knowledge(source_id, knowledge_id))
+                    return self.send(app.source_context(source_id))
                 self.send({'error': 'Not found'}, 404)
             except (ValueError, OSError) as error:
                 self.send({'error': str(error)}, 400)
 
-        def do_POST(self):
-            # Reject cross-origin browser requests and DNS rebinding hostnames.
+        def _json_body(self, limit):
             host = self.headers.get('Host', '')
             expected = f'127.0.0.1:{self.server.server_port}'
+            size = int(self.headers.get('Content-Length', '0'))
+            if size < 0 or size > limit:
+                raise ValueError('Request too large')
+            body = self.rfile.read(size)
+            if host != expected or self.headers.get('Origin', 'http://' + expected) != 'http://' + expected:
+                self.send({'error': 'Local same-origin requests only'}, 403)
+                return None
+            payload = json.loads(body or b'{}')
+            if not isinstance(payload, dict):
+                raise ValueError('Expected a JSON object')
+            return payload
+
+        def do_POST(self):
+            # Reject cross-origin browser requests and DNS rebinding hostnames.
             try:
-                size = int(self.headers.get('Content-Length', '0'))
-                if size < 0 or size > 20000:
-                    raise ValueError('Request too large')
-                # Consume a bounded body before rejecting; unread bytes can cause
-                # a connection reset instead of delivering the 403 on Windows.
-                body = self.rfile.read(size)
-                if host != expected or self.headers.get('Origin', 'http://' + expected) != 'http://' + expected:
-                    return self.send({'error': 'Local same-origin requests only'}, 403)
-                payload = json.loads(body)
-                if not isinstance(payload, dict):
-                    raise ValueError('Expected a JSON object')
-                kind, conversation_id = _match_conversation(urlparse(self.path).path)
+                path = urlparse(self.path).path
+                source = _match_source(path)
+                limit = 48000 if source and source[1] == 'knowledge' else 20000
+                payload = self._json_body(limit)
+                if payload is None:
+                    return None
+                if source is not None and source[1] == 'knowledge':
+                    if app.workspace_db is None:
+                        return self.send({'error': 'Not found'}, 404)
+                    return self.send(app.add_source_knowledge(source[0], payload))
+                kind, conversation_id = _match_conversation(path)
                 if kind in ('collection', 'messages'):
                     if app.workspace_db is None:
                         return self.send({'error': 'Not found'}, 404)
@@ -673,6 +777,44 @@ def make_handler(app):
                 if self.path == '/api/stop':
                     return self.send(app.request_stop(payload.get('id')))
                 self.send({'error': 'Not found'}, 404)
+            except (ValueError, TypeError) as error:
+                self.send({'error': str(error)}, 400)
+            except (OSError, RuntimeError) as error:
+                self.send({'error': str(error)}, 500)
+
+        def do_PUT(self):
+            try:
+                source = _match_source(urlparse(self.path).path)
+                payload = self._json_body(48000)
+                if payload is None:
+                    return None
+                if source is None or source[1] != 'knowledge_item':
+                    return self.send({'error': 'Not found'}, 404)
+                if app.workspace_db is None:
+                    return self.send({'error': 'Not found'}, 404)
+                self.send(app.update_source_knowledge(source[0], source[2], payload))
+            except (ValueError, TypeError) as error:
+                self.send({'error': str(error)}, 400)
+            except (OSError, RuntimeError) as error:
+                self.send({'error': str(error)}, 500)
+
+        def do_DELETE(self):
+            try:
+                host = self.headers.get('Host', '')
+                expected = f'127.0.0.1:{self.server.server_port}'
+                size = int(self.headers.get('Content-Length', '0'))
+                if size < 0 or size > 20000:
+                    raise ValueError('Request too large')
+                if size:
+                    self.rfile.read(size)
+                if host != expected or self.headers.get('Origin', 'http://' + expected) != 'http://' + expected:
+                    return self.send({'error': 'Local same-origin requests only'}, 403)
+                source = _match_source(urlparse(self.path).path)
+                if source is None or source[1] != 'knowledge_item':
+                    return self.send({'error': 'Not found'}, 404)
+                if app.workspace_db is None:
+                    return self.send({'error': 'Not found'}, 404)
+                self.send(app.delete_source_knowledge(source[0], source[2]))
             except (ValueError, TypeError) as error:
                 self.send({'error': str(error)}, 400)
             except (OSError, RuntimeError) as error:

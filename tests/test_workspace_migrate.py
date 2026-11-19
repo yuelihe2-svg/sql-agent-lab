@@ -51,12 +51,12 @@ def test_migration_is_idempotent_and_isolated(tmp_path):
     first_tables = tables(database)
     assert database.is_relative_to(tmp_path)
     assert set(first_tables) == APP_TABLES
-    assert versions(database) == [SCHEMA_VERSION]
+    assert versions(database) == list(range(1, SCHEMA_VERSION + 1))
     assert column_names(database).isdisjoint(FORBIDDEN_COLUMNS)
 
     migrate(database)
     assert tables(database) == first_tables
-    assert versions(database) == [SCHEMA_VERSION]
+    assert versions(database) == list(range(1, SCHEMA_VERSION + 1))
     WorkspaceStore(database)
 
     business = tmp_path / 'SECRET_DB_PATH_marker.sqlite'
@@ -86,7 +86,7 @@ def test_migration_is_idempotent_and_isolated(tmp_path):
     remove_database(database)
     assert not database.exists()
     migrate(database)
-    assert versions(database) == [SCHEMA_VERSION]
+    assert versions(database) == list(range(1, SCHEMA_VERSION + 1))
 
 
 def test_conversations_survive_restart_and_bind_one_data_source(tmp_path):

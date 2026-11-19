@@ -17,7 +17,7 @@ from .models import (
 )
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 # One implicit local workspace. Restarts reuse this id instead of inserting another.
 LOCAL_WORKSPACE_ID = '5c6a1e0a-7b34-4d5e-9f10-0a1b2c3d4e5f'
 LOCAL_WORKSPACE_NAME = 'Local'
@@ -27,6 +27,7 @@ LOCAL_USER_NAME = 'Local'
 APP_TABLES = frozenset({
     'schema_migrations', 'workspace', 'app_user', 'membership', 'data_source',
     'data_source_grant', 'conversation', 'message', 'agent_run', 'audit_event',
+    'database_profile', 'knowledge_document',
 })
 # Columns that would copy a user database, a credential, or gold SQL.
 FORBIDDEN_COLUMNS = frozenset({
@@ -34,7 +35,7 @@ FORBIDDEN_COLUMNS = frozenset({
     'reference_sql', 'host', 'port', 'filename', 'dsn',
 })
 
-_MIGRATIONS = ((SCHEMA_VERSION, """
+_MIGRATIONS = ((1, """
 CREATE TABLE IF NOT EXISTS workspace (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -117,6 +118,27 @@ CREATE TABLE IF NOT EXISTS audit_event (
     object_id TEXT NOT NULL,
     outcome TEXT NOT NULL CHECK (outcome IN ('ok', 'denied')),
     detail TEXT NOT NULL
+);
+"""), (2, """
+CREATE TABLE IF NOT EXISTS database_profile (
+    datasource_id TEXT PRIMARY KEY REFERENCES data_source(id),
+    workspace_id TEXT NOT NULL REFERENCES workspace(id),
+    fingerprint TEXT NOT NULL,
+    extracted_at TEXT NOT NULL,
+    profile_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS knowledge_document (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspace(id),
+    datasource_id TEXT NOT NULL REFERENCES data_source(id),
+    title TEXT NOT NULL,
+    format TEXT NOT NULL CHECK (format IN ('markdown', 'text', 'json')),
+    content_hash TEXT NOT NULL,
+    version INTEGER NOT NULL CHECK (version >= 1),
+    provenance TEXT NOT NULL CHECK (provenance = 'user'),
+    storage_key TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
 );
 """),)
 
@@ -555,6 +577,85 @@ class WorkspaceStore:
                 (LOCAL_WORKSPACE_ID,))
             return [_conversation_from_row(row) for row in rows]
 
+    def save_profile(self, datasource_id, workspace_id, fingerprint, extracted_at, profile_json):
+        """Replace the stored catalog profile. This does not open a user database."""
+        with self._session() as conn:
+            row = conn.execute(
+                'SELECT workspace_id FROM data_source WHERE id = ?', (datasource_id,)).fetchone()
+            if row is None or row['workspace_id'] != workspace_id:
+                raise ValueError('Data source is not registered')
+            conn.execute(
+                'INSERT INTO database_profile(datasource_id, workspace_id, fingerprint, '
+                'extracted_at, profile_json) VALUES (?, ?, ?, ?, ?) '
+                'ON CONFLICT(datasource_id) DO UPDATE SET fingerprint = excluded.fingerprint, '
+                'extracted_at = excluded.extracted_at, profile_json = excluded.profile_json',
+                (datasource_id, workspace_id, fingerprint, extracted_at, profile_json))
+
+    def get_profile_record(self, datasource_id):
+        with self._session() as conn:
+            row = conn.execute(
+                'SELECT fingerprint, extracted_at, profile_json FROM database_profile '
+                'WHERE datasource_id = ?', (datasource_id,)).fetchone()
+        if row is None:
+            return None
+        return {'fingerprint': row['fingerprint'], 'extracted_at': row['extracted_at'],
+                'profile_json': row['profile_json']}
+
+    def insert_knowledge(self, record):
+        with self._session() as conn:
+            _require_registered_source(conn, record['workspace_id'], record['datasource_id'])
+            conn.execute(
+                'INSERT INTO knowledge_document(id, workspace_id, datasource_id, title, format, '
+                'content_hash, version, provenance, storage_key, created_at, updated_at) '
+                'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                (record['id'], record['workspace_id'], record['datasource_id'], record['title'],
+                 record['format'], record['content_hash'], record['version'], record['provenance'],
+                 record['storage_key'], record['created_at'], record['updated_at']))
+
+    def update_knowledge(self, record):
+        with self._session() as conn:
+            current = conn.execute(
+                'SELECT version FROM knowledge_document WHERE id = ? AND datasource_id = ?',
+                (record['id'], record['datasource_id'])).fetchone()
+            if current is None:
+                raise ValueError('Knowledge document is not registered')
+            if current['version'] != record['version'] - 1:
+                raise ValueError('Knowledge document version is stale')
+            conn.execute(
+                'UPDATE knowledge_document SET title = ?, format = ?, content_hash = ?, '
+                'version = ?, updated_at = ? WHERE id = ? AND datasource_id = ?',
+                (record['title'], record['format'], record['content_hash'], record['version'],
+                 record['updated_at'], record['id'], record['datasource_id']))
+
+    def delete_knowledge(self, datasource_id, knowledge_id):
+        with self._session() as conn:
+            row = conn.execute(
+                'SELECT storage_key FROM knowledge_document WHERE id = ? AND datasource_id = ?',
+                (knowledge_id, datasource_id)).fetchone()
+            if row is None:
+                raise ValueError('Knowledge document is not registered')
+            conn.execute(
+                'DELETE FROM knowledge_document WHERE id = ? AND datasource_id = ?',
+                (knowledge_id, datasource_id))
+            return row['storage_key']
+
+    def get_knowledge_row(self, datasource_id, knowledge_id):
+        with self._session() as conn:
+            row = conn.execute(
+                'SELECT * FROM knowledge_document WHERE id = ? AND datasource_id = ?',
+                (knowledge_id, datasource_id)).fetchone()
+        if row is None:
+            raise ValueError('Knowledge document is not registered')
+        return dict(row)
+
+    def list_knowledge_rows(self, datasource_id):
+        with self._session() as conn:
+            _require_registered_source(conn, LOCAL_WORKSPACE_ID, datasource_id)
+            rows = conn.execute(
+                'SELECT * FROM knowledge_document WHERE datasource_id = ? '
+                'ORDER BY updated_at DESC, id', (datasource_id,))
+            return [dict(row) for row in rows]
+
     def add_message(self, message):
         _expect(message, Message)
         if message.conversation_id is None:
@@ -621,6 +722,13 @@ def _expect(value, kind):
 def _require_workspace(conn, workspace_id):
     if conn.execute('SELECT 1 FROM workspace WHERE id = ?', (workspace_id,)).fetchone() is None:
         raise ValueError('Workspace is not registered')
+
+
+def _require_registered_source(conn, workspace_id, datasource_id):
+    row = conn.execute(
+        'SELECT workspace_id FROM data_source WHERE id = ?', (datasource_id,)).fetchone()
+    if row is None or row['workspace_id'] != workspace_id:
+        raise ValueError('Data source is not registered')
 
 
 def _source_from_row(row):
