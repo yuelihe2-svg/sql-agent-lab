@@ -97,6 +97,7 @@ class Observatory:
         self.lock, self.stop = threading.Lock(), threading.Event()
         self.active = None
         self.tasks = {}  # Current-process snapshots, also available if saving fails.
+        self._run_conversation = {}
 
     def catalog(self):
         return {'databases': sorted(self.databases), 'sources': self.sources.catalog(),
@@ -134,7 +135,8 @@ class Observatory:
             result = json.loads(result_path.read_text(encoding='utf8')) if result_path.is_file() else None
             record_saved_run(
                 WorkspaceStore(self.workspace_db), run_id=run_id, manifest=manifest, task=task,
-                result=result, artifact_dir=str(path.resolve()))
+                result=result, artifact_dir=str(path.resolve()),
+                conversation_id=self._run_conversation.get(run_id))
         except (OSError, sqlite3.Error, ValueError) as error:
             if run_id in self.tasks:
                 self.tasks[run_id]['persistence_error'] = str(error)
@@ -269,8 +271,138 @@ class Observatory:
             row['review_timing'] = review_timing(result, events)
         return data
 
+    def list_conversations(self):
+        store = self._workspace()
+        with self.lock:
+            active = self.active
+        return {'conversations': [_public_conversation(item) for item in store.list_conversations()],
+                'active_run_id': active}
+
+    def create_conversation(self, payload):
+        if not isinstance(payload, dict):
+            raise ValueError('Expected a JSON object')
+        datasource_id = payload.get('datasource_id')
+        if not isinstance(datasource_id, str) or datasource_id not in self.databases:
+            raise ValueError('Data source is not registered')
+        store = self._workspace()
+        source = store.get_data_source(datasource_id)
+        title = payload.get('title', source.name)
+        if not isinstance(title, str):
+            raise ValueError('title must be a string')
+        title = title.strip()
+        now = datetime.now(timezone.utc).isoformat()
+        from sql_agent_lab.workspace.database import LOCAL_USER_ID, LOCAL_WORKSPACE_ID
+        from sql_agent_lab.workspace.models import Conversation
+        conversation = Conversation(
+            str(uuid4()), LOCAL_WORKSPACE_ID, LOCAL_USER_ID, datasource_id, title, now, now)
+        store.add_conversation(conversation)
+        return _public_conversation(conversation)
+
+    def conversation_detail(self, conversation_id):
+        store = self._workspace()
+        conversation = store.get_conversation(str(conversation_id))
+        messages = [_public_message(item) for item in store.list_messages(conversation.id)]
+        with self.lock:
+            runs = [self._run_summary(item) for item in store.list_agent_runs(conversation.id)]
+        return {'conversation': _public_conversation(conversation), 'messages': messages, 'runs': runs}
+
+    def post_conversation_message(self, conversation_id, payload):
+        if not isinstance(payload, dict):
+            raise ValueError('Expected a JSON object')
+        store = self._workspace()
+        conversation = store.get_conversation(str(conversation_id))
+        if payload.get('datasource_id', conversation.datasource_id) != conversation.datasource_id:
+            raise ValueError('A conversation is bound to one data source')
+        if payload.get('db_id', conversation.datasource_id) != conversation.datasource_id:
+            raise ValueError('A conversation is bound to one data source')
+        run_id = self.start({
+            'conversation_id': conversation.id,
+            'question': payload.get('question', ''),
+        })
+        task = self.tasks.get(run_id, {})
+        if task.get('persistence_error'):
+            raise RuntimeError(task['persistence_error'])
+        run = store.get_agent_run(run_id)
+        if run.conversation_id != conversation.id:
+            raise RuntimeError('Conversation was not saved')
+        return {'id': run_id, 'conversation_id': conversation.id, 'message_id': run.user_message_id}
+
+    def _workspace(self):
+        if self.workspace_db is None:
+            raise ValueError('Workspace database is not enabled')
+        from sql_agent_lab.workspace.database import WorkspaceStore
+        return WorkspaceStore(self.workspace_db)
+
+    def _run_summary(self, run):
+        path = self.output / run.id
+        view = None
+        status = run.result_status
+        score = run.score
+        if (path / 'manifest.json').is_file():
+            result = None
+            result_path = path / 'result.json'
+            if result_path.is_file():
+                loaded = json.loads(result_path.read_text(encoding='utf8'))
+                if isinstance(loaded, dict):
+                    result = loaded
+                    status = loaded.get('status') or None
+                    if 'score' in loaded:
+                        score = loaded.get('score')
+            view = self._task_view(run.id, path, result)
+        if score in (0.0, 1.0) and not isinstance(score, bool):
+            score = int(score)
+        elif score not in (None, 0, 1):
+            score = None
+        from sql_agent_lab.workspace.result_view import public_notice, public_result
+        summary = {
+            'id': run.id,
+            'user_message_id': run.user_message_id,
+            'datasource_id': run.datasource_id,
+            'state': view['state'] if view else run.state,
+            'stage': (view.get('stage') if view else run.stage) or None,
+            'started_at': view.get('started_at') if view else run.started_at,
+            'updated_at': view.get('updated_at') if view else run.updated_at,
+            'ended_at': view.get('ended_at') if view else run.ended_at,
+            'stop_requested_at': view.get('stop_requested_at') if view else run.stop_requested_at,
+            'error': (view.get('error') if view else run.error) or None,
+            'result_status': status,
+            'score': score,
+            'semantic_review': run.semantic_review,
+            'result': public_result(
+                path if (path / 'manifest.json').is_file() else None,
+                state=view['state'] if view else run.state,
+                stage=(view.get('stage') if view else run.stage) or None,
+                result=result if (path / 'manifest.json').is_file() else None,
+                task_error=(view.get('error') if view else run.error) or None),
+        }
+        summary['error'] = public_notice(summary['error'])
+        if view and view.get('persistence_error'):
+            notice = public_notice(view['persistence_error'])
+            if notice:
+                summary['persistence_error'] = notice
+        return summary
+
     def start(self, payload):
-        if payload.get('question_id') is not None:
+        conversation_id = payload.get('conversation_id')
+        if conversation_id is not None:
+            if self.workspace_db is None:
+                raise ValueError('Workspace database is not enabled')
+            if payload.get('question_id') is not None:
+                raise ValueError('A conversation message cannot select a benchmark question')
+            from sql_agent_lab.workspace.database import WorkspaceStore
+            conversation = WorkspaceStore(self.workspace_db).get_conversation(str(conversation_id))
+            supplied = payload.get('db_id', payload.get('datasource_id', conversation.datasource_id))
+            if 'datasource_id' in payload and payload.get('datasource_id') != conversation.datasource_id:
+                raise ValueError('A conversation is bound to one data source')
+            if payload.get('db_id') not in (None, conversation.datasource_id):
+                raise ValueError('A conversation is bound to one data source')
+            if supplied != conversation.datasource_id or conversation.datasource_id not in self.databases:
+                raise ValueError('Conversation data source is not registered')
+            text = payload.get('question', '')
+            if not isinstance(text, str) or not 1 <= len(text.strip()) <= 4000:
+                raise ValueError('Choose a database and enter a question (maximum 4000 characters)')
+            question, reference = Question('custom', conversation.datasource_id, text.strip()), None
+        elif payload.get('question_id') is not None:
             if self.benchmark is None:
                 raise ValueError('BIRD benchmark is not configured')
             question, reference = self.benchmark.question(payload['question_id'])
@@ -287,6 +419,8 @@ class Observatory:
             run_id = datetime.now().strftime('%Y%m%d-%H%M%S-') + uuid4().hex[:6]
             path = self.output / run_id
             path.mkdir()
+            if conversation_id is not None:
+                self._run_conversation[run_id] = str(conversation_id)
             manifest = {'question': asdict(question), 'model': {'name': 'qwen3:4b-instruct'},
                         'mode': 'local_inference', 'created_at': datetime.now(timezone.utc).isoformat(),
                         'benchmark': reference is not None, 'schema_retrieval': bool(payload.get('retrieval', True)),
@@ -402,6 +536,55 @@ class Observatory:
         return result
 
 
+def _public_conversation(conversation):
+    return {'id': conversation.id, 'title': conversation.title,
+            'datasource_id': conversation.datasource_id,
+            'created_at': conversation.created_at, 'updated_at': conversation.updated_at}
+
+
+def _public_message(message):
+    return {'id': message.id, 'conversation_id': message.conversation_id, 'seq': message.seq,
+            'role': message.role, 'body': message.body, 'created_at': message.created_at}
+
+
+_STUDIO_ROOT = Path(__file__).resolve().parents[3] / 'prototypes' / 'workspace-ui'
+_STUDIO_FILES = {
+    '/workspace': 'index.html',
+    '/workspace/': 'index.html',
+    '/workspace/index.html': 'index.html',
+    '/workspace/app.js': 'app.js',
+    '/workspace/styles.css': 'styles.css',
+}
+_STUDIO_TYPES = {'.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css'}
+
+
+def _studio_file(path):
+    name = _STUDIO_FILES.get(path)
+    if name is None:
+        return None
+    root = _STUDIO_ROOT.resolve()
+    file = (root / name).resolve()
+    if file.parent != root or not file.is_file():
+        return None
+    return file.read_bytes(), _STUDIO_TYPES[file.suffix]
+
+
+def _match_conversation(path):
+    if path == '/api/conversations':
+        return 'collection', None
+    prefix = '/api/conversations/'
+    if not path.startswith(prefix):
+        return None, None
+    rest = path[len(prefix):]
+    if rest.endswith('/messages'):
+        conversation_id = rest[:-len('/messages')]
+        if conversation_id and '/' not in conversation_id:
+            return 'messages', conversation_id
+    elif rest and '/' not in rest:
+        return 'item', rest
+    return None, None
+
+
 def make_handler(app):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
@@ -429,6 +612,10 @@ def make_handler(app):
                     return self.send(Path(__file__).with_suffix('.html').read_bytes(), content_type='text/html')
                 if url.path == '/analysis':
                     return self.send(Path(__file__).with_name('analysis.html').read_bytes(), content_type='text/html')
+                studio = _studio_file(url.path)
+                if studio is not None:
+                    body, mime = studio
+                    return self.send(body, content_type=mime)
                 if url.path in ('/api/analysis', '/analysis.csv', '/analysis.xlsx'):
                     directory = getattr(app, 'analysis_dir', None)
                     if directory is None:
@@ -447,6 +634,13 @@ def make_handler(app):
                     return self.send(app.run_index())
                 if url.path == '/api/run':
                     return self.send(app.read_run(parse_qs(url.query).get('id', [''])[0]))
+                kind, conversation_id = _match_conversation(url.path)
+                if kind in ('collection', 'item'):
+                    if app.workspace_db is None:
+                        return self.send({'error': 'Not found'}, 404)
+                    if kind == 'collection':
+                        return self.send(app.list_conversations())
+                    return self.send(app.conversation_detail(conversation_id))
                 self.send({'error': 'Not found'}, 404)
             except (ValueError, OSError) as error:
                 self.send({'error': str(error)}, 400)
@@ -467,6 +661,13 @@ def make_handler(app):
                 payload = json.loads(body)
                 if not isinstance(payload, dict):
                     raise ValueError('Expected a JSON object')
+                kind, conversation_id = _match_conversation(urlparse(self.path).path)
+                if kind in ('collection', 'messages'):
+                    if app.workspace_db is None:
+                        return self.send({'error': 'Not found'}, 404)
+                    if kind == 'collection':
+                        return self.send(app.create_conversation(payload))
+                    return self.send(app.post_conversation_message(conversation_id, payload))
                 if self.path == '/api/start':
                     return self.send({'id': app.start(payload)})
                 if self.path == '/api/stop':

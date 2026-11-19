@@ -167,11 +167,12 @@ def sync_registered_sources(path, catalog):
     return store
 
 
-def record_saved_run(store, *, run_id, manifest, task, result, artifact_dir):
+def record_saved_run(store, *, run_id, manifest, task, result, artifact_dir, conversation_id=None):
     """Project one saved run directory into the workspace database.
 
     The directory must already contain the task. Only the question text is
     stored on the user message. Reference SQL, samples, and trace stay out.
+    `conversation_id` appends to that conversation instead of creating one.
     """
     if not isinstance(manifest, dict) or not isinstance(task, dict):
         raise ValueError('Saved run is missing manifest or task')
@@ -195,6 +196,10 @@ def record_saved_run(store, *, run_id, manifest, task, result, artifact_dir):
         run_id, datasource_id, manifest, task, result, artifact_dir,
         conversation_id=None if existing is None else existing.conversation_id,
         user_message_id=None if existing is None else existing.user_message_id)
+    if existing is None and conversation_id:
+        projected = replace(projected, conversation_id=conversation_id, user_message_id=None)
+        return store.attach_run(
+            conversation_id=conversation_id, body=body, created_at=created_at, run=projected)
     if existing is None:
         conversation = Conversation(
             str(uuid.uuid4()), LOCAL_WORKSPACE_ID, LOCAL_USER_ID, datasource_id,
@@ -203,6 +208,8 @@ def record_saved_run(store, *, run_id, manifest, task, result, artifact_dir):
         projected = replace(
             projected, conversation_id=conversation.id, user_message_id=message.id)
         return store.begin_run(conversation, message, projected)
+    if conversation_id and existing.conversation_id != conversation_id:
+        raise ValueError('Agent run belongs to another conversation')
     return store.save_agent_run(projected)
 
 
@@ -263,6 +270,13 @@ def _run_values(run):
     return (run.id, run.conversation_id, run.user_message_id, run.datasource_id, run.state,
             run.stage, run.started_at, run.updated_at, run.ended_at, run.stop_requested_at,
             run.error, run.result_status, run.score, int(run.semantic_review), run.artifact_dir)
+
+
+def _conversation_from_row(row):
+    return Conversation(
+        id=row['id'], workspace_id=row['workspace_id'], user_id=row['user_id'],
+        datasource_id=row['datasource_id'], title=row['title'],
+        created_at=row['created_at'], updated_at=row['updated_at'])
 
 
 def _run_from_row(row):
@@ -457,10 +471,55 @@ class WorkspaceStore:
             raise ValueError('Agent run is not registered')
         return _run_from_row(row)
 
-    def list_agent_runs(self):
+    def list_agent_runs(self, conversation_id=None):
         with self._session() as conn:
-            rows = conn.execute('SELECT * FROM agent_run ORDER BY started_at, id')
+            if conversation_id is None:
+                rows = conn.execute('SELECT * FROM agent_run ORDER BY started_at, id')
+            else:
+                rows = conn.execute(
+                    'SELECT * FROM agent_run WHERE conversation_id = ? ORDER BY started_at, id',
+                    (conversation_id,))
             return [_run_from_row(row) for row in rows]
+
+    def attach_run(self, *, conversation_id, body, created_at, run):
+        """Append one user message and its run onto an existing conversation."""
+        _expect(run, AgentRun)
+        with self._session() as conn:
+            existing = conn.execute(
+                'SELECT conversation_id, user_message_id FROM agent_run WHERE id = ?',
+                (run.id,)).fetchone()
+            if existing is not None:
+                if existing['conversation_id'] != conversation_id:
+                    raise ValueError('Agent run belongs to another conversation')
+                linked = replace(
+                    run, conversation_id=existing['conversation_id'],
+                    user_message_id=existing['user_message_id'])
+                _update_agent_run(conn, linked)
+                return _run_from_row(conn.execute(
+                    'SELECT * FROM agent_run WHERE id = ?', (run.id,)).fetchone())
+            conv = conn.execute(
+                'SELECT workspace_id, datasource_id, updated_at FROM conversation WHERE id = ?',
+                (conversation_id,)).fetchone()
+            if conv is None:
+                raise ValueError('Conversation is not registered')
+            if conv['workspace_id'] != LOCAL_WORKSPACE_ID or conv['datasource_id'] != run.datasource_id:
+                raise ValueError('Conversation data source does not match the run')
+            seq = conn.execute(
+                'SELECT COALESCE(MAX(seq), 0) + 1 FROM message WHERE conversation_id = ?',
+                (conversation_id,)).fetchone()[0]
+            message = Message(str(uuid.uuid4()), seq, 'user', body, created_at, conversation_id)
+            conn.execute(
+                'INSERT INTO message(id, conversation_id, seq, role, body, created_at) '
+                'VALUES (?, ?, ?, ?, ?, ?)',
+                (message.id, message.conversation_id, message.seq, message.role,
+                 message.body, message.created_at))
+            linked = replace(run, conversation_id=conversation_id, user_message_id=message.id)
+            _insert_agent_run(conn, linked)
+            if created_at >= conv['updated_at']:
+                conn.execute(
+                    'UPDATE conversation SET updated_at = ? WHERE id = ?',
+                    (created_at, conversation_id))
+            return linked
 
     def add_conversation(self, conversation):
         _expect(conversation, Conversation)
@@ -487,10 +546,14 @@ class WorkspaceStore:
             row = conn.execute('SELECT * FROM conversation WHERE id = ?', (conversation_id,)).fetchone()
         if row is None:
             raise ValueError('Conversation is not registered')
-        return Conversation(
-            id=row['id'], workspace_id=row['workspace_id'], user_id=row['user_id'],
-            datasource_id=row['datasource_id'], title=row['title'],
-            created_at=row['created_at'], updated_at=row['updated_at'])
+        return _conversation_from_row(row)
+
+    def list_conversations(self):
+        with self._session() as conn:
+            rows = conn.execute(
+                'SELECT * FROM conversation WHERE workspace_id = ? ORDER BY updated_at DESC, id',
+                (LOCAL_WORKSPACE_ID,))
+            return [_conversation_from_row(row) for row in rows]
 
     def add_message(self, message):
         _expect(message, Message)
