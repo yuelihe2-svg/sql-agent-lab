@@ -4,6 +4,7 @@ import hashlib
 import json
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -33,9 +34,10 @@ S01_SQL = "SELECT COUNT(*) AS customer_count FROM customers"
 
 
 class FakeModel:
-    def __init__(self, *, fail_on=None, sleep_first=0):
+    def __init__(self, *, fail_on=None, sleep_first=0, delay=time.sleep):
         self.fail_on = fail_on
         self.sleep_first = sleep_first
+        self.delay = delay
         self.calls = 0
         self.messages = []
 
@@ -45,7 +47,7 @@ class FakeModel:
         if self.fail_on == self.calls:
             raise RuntimeError("fake model failed")
         if self.sleep_first and self.calls == 1:
-            time.sleep(self.sleep_first)
+            self.delay(self.sleep_first)
         content = messages[-1]["content"]
         if "数据库共有多少客户" in content:
             sql = S01_SQL
@@ -185,9 +187,15 @@ def test_model_exception_records_null_usage_and_continues(shopbench, tmp_path):
     assert report["results"][1]["sql_correct"] is False
 
 
-def test_case_and_total_timeouts_stop_without_repeating_finished_work(shopbench, tmp_path):
+def test_case_and_total_timeouts_stop_without_repeating_finished_work(shopbench, tmp_path, monkeypatch):
+    from evals.pilot import runner
+    now = 0.0
+    def advance(seconds):
+        nonlocal now
+        now += seconds
+    monkeypatch.setattr(runner, 'time', SimpleNamespace(monotonic=lambda: now, perf_counter=lambda: now))
     database_dir, manifest = shopbench
-    slow = FakeModel(sleep_first=0.2)
+    slow = FakeModel(sleep_first=0.2, delay=advance)
     report = _run(tmp_path, database_dir, manifest, slow, max_cases=2, case_timeout_seconds=0.05)
     assert report["stopped_reason"] == "Case timeout reached"
     assert [row["case_id"] for row in report["results"]] == ["S01"]
@@ -212,7 +220,7 @@ def test_case_and_total_timeouts_stop_without_repeating_finished_work(shopbench,
     assert resumed["accuracy_denominator"] == 2
     assert again["results"][0]["case_id"] == "S01"
 
-    limited = FakeModel(sleep_first=0.15)
+    limited = FakeModel(sleep_first=0.15, delay=advance)
     total = _run(tmp_path / "total", database_dir, manifest, limited, max_cases=2,
                  case_timeout_seconds=5, total_timeout_seconds=0.05)
     assert total["stopped_reason"] == "Total runtime limit reached"

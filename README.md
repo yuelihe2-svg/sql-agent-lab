@@ -11,18 +11,15 @@ SQL Agent Lab 是一个三角色、只读 SQLite 问答应用。LangGraph 组织
 在项目根目录使用 Python 3.13：
 
 ```powershell
-python -m venv .venv
+py -3.13 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements-lock.txt
 .\.venv\Scripts\python.exe -m pip install -e . --no-deps
-.\.venv\Scripts\python.exe -m pytest
-node src/sql_agent_lab/macsql/test_review_ui.cjs
-node src/sql_agent_lab/macsql/test_task_ui.cjs
-node src/sql_agent_lab/macsql/test_task_races.cjs
-node src/sql_agent_lab/macsql/test_source_ui.cjs
-node src/sql_agent_lab/macsql/test_user_ui.cjs
+.\check-offline.ps1
 ```
 
 测试使用临时 SQLite 数据库、保存的模型回复和模拟传输。测试网络防护仅允许连接测试自行创建的本地 HTTP 服务，不允许访问云端 API 或本地模型服务。回归测试通过不代表真实模型准确率提升。
+
+脚本会运行工作区、用户页和观察台的 Node 检查，以及完整的 pytest 套件。已安装 Playwright 和 Edge 时，可另运行 `python tests/browser_workspace_smoke.py --channel msedge --python .venv/Scripts/python.exe`，在临时空库中走一次上传、澄清、查询、复制 SQL、下载 CSV 和刷新恢复。
 
 ## 网页
 
@@ -40,7 +37,7 @@ node src/sql_agent_lab/macsql/test_user_ui.cjs
 
 工作区 `/workspace/` 使用本地 SQLite 保存对话。在配置里填写 `workspace_db`，或启动时增加 `--workspace-db <仓库外的 SQLite 文件>`，即可按数据源建立对话、查看结果、停止查询和查看库简介。页面轮询运行状态。工作区默认使用同一对话、同一数据源的有界历史和数据库业务说明，不再显示用户开关。历史预算默认1600 UTF-8字节，当前问题始终保留，失败轮次省略SQL。无模型验收见[工作区说明](prototypes/workspace-ui/README.md)。
 
-原工作流观察台保留在 `/observatory`，可查看角色原始输出、工具调用、BIRD 评测与历史实验。用户页的“开发者观察台”链接可携带当前运行 ID；`/analysis` 仍用于逐题分析。用户页沿用相同的 `POST /api/start`、`POST /api/stop` 和任务查询接口，固定开启原有 schema 检索、关闭实验语义复核，不改变 Agent 工作流。详情中的正确性评测与任务结束状态分别显示，缺失 Token 不显示为零。
+在 `/observatory` 可以查看角色原始输出、工具调用、BIRD 评测与历史实验。首页的“开发者观察台”链接会携带当前运行 ID。`/analysis` 用于逐题分析。首页通过 `POST /api/start` 启动查询，通过 `POST /api/stop` 请求停止，并从轻量详情接口读取结果。首页启用 schema 检索，实验语义复核默认关闭。页面分别展示任务状态和正确性评测，Token 缺失时显示“未记录”。
 
 结果表格上方的“结果说明”由前端 `basicAnswer(run)` 根据已有执行反馈生成，不调用模型或重新执行 SQL。明确完整的一行一列结果展示字段名和值；0、NULL、空字符串和没有返回行分别说明。多行结果说明行列数；截断或完整性未知的结果只描述预览，不把预览行数当作总数，也不根据自然语言或 SQL 文本推断业务含义。原有类型检查待复核时保留提醒。执行错误优先读取 SQLite 工具的 `feedback.message`，普通页面展示可操作的中文说明，详细视图保留原始错误。SQL 和表格始终作为核对依据。
 
@@ -57,7 +54,7 @@ node src/sql_agent_lab/macsql/test_user_ui.cjs
 3. 后台 `work()` 管理任务生命周期，`_work()` 按 ID 找到 SQLite 文件，组装只读工具、上下文配置及 `LocalOllamaModel`，调用 `ReferenceMacSQLAgent.run(question)`。
 4. Agent 读取 schema，按既有条件执行角色节点；`reference_baseline.py` 组织角色提示词，`run_local.py` 的适配器向本机 `127.0.0.1:11434/api/chat` 发送请求。网页当前固定使用已下载的 `qwen3:4b-instruct`、16,384 上下文、8 个 CPU 线程、禁用 GPU offload 和 thinking；适配器检查本地 GGUF，拒绝远程模型，不下载模型或回退到云端。
 5. 模型返回文本，Agent 提取 SQL，由 Python 的 SQLite 工具检查和执行；模型不持有数据库连接。连接使用 `mode=ro`、`query_only` 和原有 SQL 限制。输出经过既有执行与类型检查，必要时才调用修复节点。
-6. 后端写入事件与结果；浏览器的 `refresh()` 每秒查询 `/api/runs` 和 `/api/run?id=...`，`renderRun()`、`renderTable()` 更新状态与表格。模型适配器当前是非流式调用，完整回复到达后才记录本次 Token；页面轮询不等于逐 Token 流式输出。
+6. 后端保存工作流最终选中的 SQL 及其执行反馈。首页通过 `/api/user/runs` 读取最近 20 条普通问答，通过 `/api/user/run?id=...` 读取展示字段、Token 汇总及最近 100 个阶段事件。任务结束后页面停止重复请求该条详情。开发者观察台仍从 `/api/run` 读取完整记录。
 
 真实接入使用正常的 `start-web.ps1` 或模块启动命令，不使用浏览器测试夹具。先确认 Ollama 已运行且已有指定模型；启动网页本身不推理，点击“开始查询”才开始。第一次加载模型和处理 schema 可能耗时。普通问答没有参考答案，不会触发 BIRD 评分；一次简单查询成功只能证明该次链路与结果，不能代表通用准确率。
 
@@ -69,7 +66,7 @@ node src/sql_agent_lab/macsql/test_user_ui.cjs
 {"sources": [{"id": "shop", "name": "商店数据", "kind": "sqlite", "path": "D:/sql-agent-data/shop.sqlite"}]}
 ```
 
-`id` 是稳定且唯一的标识，使用英文字母、数字、下划线或连字符；`name` 是页面名称，省略时使用 ID。相对路径以这份配置文件所在目录为基准。接入时只读检查文件和 schema，不复制、建表或修改数据库，也不调用模型。配置目前在启动时加载，修改后需重启自己启动的服务；暂不提供上传文件、在线编辑注册表或其他数据库类型。
+`id` 是稳定且唯一的标识，使用英文字母、数字、下划线或连字符；`name` 是页面名称，省略时使用 ID。相对路径以这份配置文件所在目录为基准。接入时只读检查文件和 schema，不复制、建表或修改数据库，也不调用模型。手工配置在服务启动时加载。启用工作区后，也可在左栏上传 SQLite 文件立即登记新数据源。
 
 ```powershell
 .\.venv\Scripts\python.exe -B -m sql_agent_lab.macsql.live_ui --sources D:/sql-agent-data/sources.json --output-dir D:/sql-agent-lab-runs/standalone --port 8781
@@ -87,6 +84,7 @@ node src/sql_agent_lab/macsql/test_user_ui.cjs
 | `POST /api/start` 普通问答 | `{"db_id":"shop","question":"有多少条记录？"}` | 只允许已注册 ID，构造普通问题，不执行参考 SQL |
 | `POST /api/start` BIRD 评测 | `{"question_id":"1"}` | 从服务端题库取问题与参考答案；未启用 BIRD 时拒绝 |
 | `GET /api/runs`、`GET /api/run?id=...` | 原有任务状态、事件、SQL、结果预览 | 继续复用任务生命周期管理 |
+| `GET /api/user/runs`、`GET /api/user/run?id=...` | 普通问答历史、任务摘要和结果预览 | 首页使用，省去模型原文、工具输入和评测证据 |
 
 两类启动请求继续支持原有 `retrieval`、`semantic_review` 选项。为兼容旧页面，以是否提供 `question_id` 区分模式；提供题号时由服务端确定问题内容和数据库。若同时提供 `db_id`，它必须与题目所属数据库一致。参考 SQL 不进入 `Question` 或模型上下文。
 
@@ -141,7 +139,7 @@ node src/sql_agent_lab/macsql/test_user_ui.cjs
 
 本实现参考 MAC-SQL 的角色设计，不是作者仓库的逐字复刻，也不宣称复现论文分数。来源与许可说明见 `NOTICE.md`。
 
-## 协作开发
+## 开发约定
 
 `main` 保存已验证的版本。每次开发从最新的 `main` 新建功能分支，小步提交，通过 Pull Request 说明问题、改动和离线验证结果，再审查合并。工程改造与 Agent 行为修改分开提交，便于追踪结果变化。
 
@@ -150,6 +148,10 @@ node src/sql_agent_lab/macsql/test_user_ui.cjs
 工作区对话现在默认参考业务说明和当前对话上下文，不再显示面向用户的开关。底层 API 仍允许显式关闭以便离线对照；单次问答路径保持原默认行为。历史仍按对话与数据源隔离并受字节预算约束。
 
 工作区会对缺少前文的部分中文追问先请求补充完整条件，不调用模型生成猜测 SQL。此检查仅覆盖明确的无前文指代，并非通用歧义识别。结果页区分无记录、空值和截断结果；这些检查不证明 SQL 的业务语义正确。
+
+工作区的 SQL 详情支持复制语句。结果表格可下载为带 UTF-8 BOM 的 CSV，按钮和文件名会标明完整结果或预览。下载使用页面已有的行列。CSV 将空值写为 `NULL`，保留空字符串，并给可能被表格软件解释为公式的文本添加单引号。超出浏览器安全整数范围的数值以十进制文本传输，导入表格软件时可将标识符列设为文本。
+
+查询中的停止请求会在 SQLite 进度回调处中断正在执行的语句。已经发给 Ollama 的非流式请求仍需等待返回。普通已注册库按只读模式执行查询，运行记录中的 `database_unchanged` 为 `null`。BIRD 数据源继续执行原有的固定版本校验。
 
 工作区左侧“添加数据库”支持上传不超过20 MB的完整、未加密 SQLite 文件，同时填写名称及可选业务说明。文件与持久注册表保存于运行输出目录；重启时必须使用同一输出目录。业务说明保存在工作区知识存储中。“描述一下这个数据库”“数据库有哪些表”等明确请求直接读取结构回答，不调用模型生成查询；业务定义类问题返回已保存说明供核对，未配置说明时明确提示。此意图识别为有限规则，并非通用自然语言分类器。缺少前文的追问澄清后，紧接着的补充会与原问题一起送入查询流程；它不保证自动补齐所有业务条件。
 
@@ -165,7 +167,7 @@ node src/sql_agent_lab/macsql/test_user_ui.cjs
 
 打开 http://127.0.0.1:8782/workspace/ 后添加 SQLite 文件。本地推理使用 Ollama 的 `qwen3:4b-instruct`；启动网页本身不调用模型。当前定位为本机单用户开发版本，中文意图和追问识别仍有规则边界，不代表通用业务语义可靠性。
 
-新协作者快速启动（Windows PowerShell，Python 3.13；已安装 Git 和 Ollama）：
+新协作者可先用 Windows PowerShell、Git 和 Python 3.13 启动空工作区：
 
 ```powershell
 git clone https://github.com/yuelihe2-svg/sql-agent-lab.git
@@ -174,10 +176,9 @@ py -3.13 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements-lock.txt
 .\.venv\Scripts\python.exe -m pip install -e . --no-deps
 New-Item -ItemType Directory -Force ../sql-agent-local | Out-Null
-ollama pull qwen3:4b-instruct
 .\.venv\Scripts\python.exe -m sql_agent_lab.macsql.live_ui --workspace-db ../sql-agent-local/workspace.sqlite --output-dir ../sql-agent-local/runs --port 8782
 ```
 
-先启动本机 Ollama 服务（若没有运行，在另一个终端执行 `ollama serve`）。`ollama pull` 仅用于下载本地模型；本项目网页推理连接本机 `127.0.0.1:11434`。访问 http://127.0.0.1:8782/workspace/ ，添加 SQLite 数据库即可提问。不使用模型时可以跳过模型下载，只运行离线测试。
+打开终端给出的工作区地址，上传 SQLite 后可查看表结构、维护业务说明和浏览历史。需要让模型生成 SQL 时，启动本机 Ollama 服务，并执行 `ollama pull qwen3:4b-instruct` 安装模型。网页推理连接本机 `127.0.0.1:11434`。
 
 开始开发：`git switch -c feat/your-feature`，完成后推送自己的分支并提交目标为 `main` 的 PR。直接推送需要仓库管理员邀请 GitHub 账号；仓库链接本身不授予写权限。

@@ -19,7 +19,7 @@ _SQL = 20000
 VIEW_FIELDS = (
     'summary', 'state', 'stage', 'execution_status', 'sql', 'columns', 'rows',
     'preview', 'has_more', 'truncated', 'complete', 'error', 'elapsed_seconds',
-    'tokens', 'evaluated', 'grounding',
+    'tokens', 'evaluated', 'grounding', 'needs_clarification',
 )
 
 
@@ -27,9 +27,11 @@ def public_result(directory, *, state, stage, result, task_error=None):
     """Build the chat DTO from an already loaded result object."""
     loaded = result if isinstance(result, dict) else {}
     feedback = loaded.get('feedback') if isinstance(loaded.get('feedback'), dict) else {}
-    columns = _columns(feedback.get('columns'))
-    rows, row_cut = _rows(feedback.get('preview_rows'), len(columns) or _COLUMNS)
-    has_more, truncated = _bounds(feedback, row_cut)
+    columns, column_cut = _columns(feedback.get('columns'))
+    rows, row_cut = _rows(feedback.get('preview_rows'), len(columns))
+    has_more, truncated = _bounds(feedback, row_cut or column_cut)
+    if feedback.get('column_count', len(columns)) != len(columns):
+        truncated = True
     executed = feedback.get('status') == 'ok'
     sql = loaded.get('sql') if isinstance(loaded.get('sql'), str) else None
     if isinstance(sql, str):
@@ -42,13 +44,14 @@ def public_result(directory, *, state, stage, result, task_error=None):
     error = _error_summary(state, loaded, feedback, task_error)
     from .answer_checks import result_caveat, query_basis
     summary = _summary(state, loaded, feedback, columns, rows, complete, error)
-    caveat = result_caveat(feedback)
+    caveat = result_caveat({**feedback, 'has_more': has_more, 'truncated': truncated}) if executed and summary else ''
     if caveat:
         summary += ' ' + caveat
-    if executed and sql:
+    if summary and executed and sql:
         summary += '\n' + query_basis(sql)
     return {
         'summary': summary,
+        'needs_clarification': isinstance(loaded.get('clarification'), str) and bool(loaded['clarification']),
         'state': state if isinstance(state, str) else 'unknown',
         'stage': stage if isinstance(stage, str) and _STAGE.fullmatch(stage) else None,
         'execution_status': loaded.get('status') if isinstance(loaded.get('status'), str) else None,
@@ -61,7 +64,7 @@ def public_result(directory, *, state, stage, result, task_error=None):
         'complete': complete,
         'error': error,
         'elapsed_seconds': elapsed,
-        'tokens': _tokens(directory),
+        'tokens': _tokens(directory, loaded),
         'evaluated': _evaluated(loaded),
         'grounding': _grounding(loaded),
     }
@@ -79,32 +82,35 @@ def public_notice(value):
 def _bounds(feedback, row_cut):
     if not feedback:
         return False, False
-    has_more = True if 'has_more' not in feedback else feedback.get('has_more') is True
-    truncated = True if 'truncated' not in feedback else feedback.get('truncated') is True
+    has_more = feedback.get('has_more') is not False
+    truncated = feedback.get('truncated') is not False
     if row_cut:
         truncated = True
     return has_more, truncated
 
 
 def _columns(value):
-    if not isinstance(value, list):
-        return []
+    if not isinstance(value, list) or not value:
+        return [], True
     names = []
-    for item in value[:_COLUMNS]:
-        if isinstance(item, str) and item.strip():
-            names.append(item.strip()[:_CELL])
-    return names
+    cut = len(value) > _COLUMNS
+    for index, item in enumerate(value[:_COLUMNS], start=1):
+        name = item if isinstance(item, str) and item.strip() else f'第{index}列'
+        names.append(name[:_CELL])
+        cut |= len(name) > _CELL
+    return names, cut
 
 
 def _rows(value, width):
     if not isinstance(value, list):
-        return [], False
+        return [], True
     cut = len(value) > _ROWS
     rows = []
     for raw in value[:_ROWS]:
         if not isinstance(raw, list):
+            cut = True
             continue
-        if len(raw) > width:
+        if len(raw) != width or any(isinstance(cell, str) and len(cell) > _CELL for cell in raw[:width]):
             cut = True
         rows.append([_cell(item) for item in raw[:width]])
     return rows, cut
@@ -114,9 +120,10 @@ def _cell(value):
     if value is None or isinstance(value, bool):
         return value
     if isinstance(value, int):
-        return value
+        # Browser JSON parsers round integers outside the IEEE-754 safe range.
+        return value if abs(value) <= 2**53 - 1 else str(value)
     if isinstance(value, float):
-        return value if math.isfinite(value) else None
+        return value if math.isfinite(value) else str(value)
     if isinstance(value, str):
         return value if len(value) <= _CELL else value[:_CELL] + '…'
     return None
@@ -253,41 +260,24 @@ def _summary(state, result, feedback, columns, rows, complete, error):
 def _format_value(value):
     if isinstance(value, bool):
         return 'true' if value else 'false'
-    if isinstance(value, (int, float)):
-        return format(value, 'g')
     return str(value)
 
 
-def _tokens(directory):
+def _tokens(directory, result):
+    from sql_agent_lab.macsql.trace_support import token_totals
     empty = {'input': None, 'output': None}
+    saved = result.get('tokens')
+    if isinstance(saved, dict):
+        if all(type(saved.get(k)) is int and saved[k] >= 0 for k in empty):
+            return {k: saved[k] for k in empty}
+        return empty
     if directory is None:
         return empty
     path = Path(directory) / 'trace.jsonl'
     if not path.is_file():
         return empty
-    total_in = total_out = 0
-    seen = False
     try:
-        lines = path.read_text(encoding='utf8').splitlines()
-    except OSError:
+        with path.open(encoding='utf8') as stream:
+            return token_totals(json.loads(line) for line in stream)
+    except (OSError, ValueError):
         return empty
-    for line in lines:
-        try:
-            event = json.loads(line)
-        except json.JSONDecodeError:
-            return empty
-        if not isinstance(event, dict) or event.get('event') not in ('call_completed', 'call_failed'):
-            continue
-        if event.get('usage_complete') is False:
-            return empty
-        incoming, outgoing = event.get('input_tokens'), event.get('output_tokens')
-        if isinstance(incoming, bool) or isinstance(outgoing, bool):
-            return empty
-        if not isinstance(incoming, int) or not isinstance(outgoing, int):
-            return empty
-        seen = True
-        total_in += incoming
-        total_out += outgoing
-    if not seen:
-        return empty
-    return {'input': total_in, 'output': total_out}

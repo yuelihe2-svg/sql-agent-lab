@@ -1,10 +1,25 @@
 """Studio page, safe result view, and an offline conversation through the real server."""
 import json
 from pathlib import Path
+import pytest
 
 from sql_agent_lab.workspace.result_view import VIEW_FIELDS, public_result
 
 from test_conversations_api import build, client_for, wait_done
+
+
+@pytest.mark.parametrize(('value', 'display'), [
+    (1234567, '1234567'), (123456789.123456, '123456789.123456'),
+    (9223372036854775807, '9223372036854775807'),
+])
+def test_scalar_precision_survives_summary_and_browser_json(value, display):
+    view = public_result(None, state='completed', stage='finished', result={
+        'status': 'completed', 'sql': 'SELECT n FROM numbers',
+        'feedback': {'status': 'ok', 'columns': ['n'], 'column_count': 1,
+                     'preview_rows': [[value]], 'has_more': False, 'truncated': False}})
+    assert display in view['summary']
+    expected = display if value > 2**53 - 1 else value
+    assert view['rows'] == [[expected]]
 
 
 def test_result_view_keeps_preview_separate_and_drops_private_fields(tmp_path):
@@ -45,6 +60,27 @@ def test_result_view_keeps_preview_separate_and_drops_private_fields(tmp_path):
         assert hidden not in body
 
 
+@pytest.mark.parametrize('overrides', [
+    {'preview_rows': None}, {'preview_rows': [], 'has_more': None},
+    {'preview_rows': [['x' * 170]]}, {'preview_rows': [[2]], 'truncated': 'false'},
+    {'preview_rows': [[2]], 'column_count': 3},
+])
+def test_partial_or_legacy_feedback_is_never_declared_complete(overrides):
+    feedback = {'status': 'ok', 'columns': ['n'], 'column_count': 1,
+                'has_more': False, 'truncated': False, **overrides}
+    view = public_result(None, state='completed', stage=None, result={'sql': 'SELECT n', 'feedback': feedback})
+    assert not view['complete']
+    assert '没有匹配的记录' not in view['summary']
+
+
+def test_empty_alias_preserves_later_column_alignment():
+    view = public_result(None, state='completed', stage=None, result={
+        'sql': 'SELECT 2 AS "", 3 AS n', 'feedback': {'status': 'ok', 'columns': ['', 'n'],
+            'column_count': 2, 'preview_rows': [[2, 3]], 'has_more': False, 'truncated': False}})
+    assert view['columns'] == ['第1列', 'n']
+    assert view['rows'] == [[2, 3]]
+
+
 def test_successful_value_is_not_reported_as_accuracy(tmp_path):
     view = public_result(tmp_path, state='completed', stage='finished', result={
         'status': 'completed', 'sql': 'SELECT n FROM numbers', 'score': None,
@@ -57,6 +93,42 @@ def test_successful_value_is_not_reported_as_accuracy(tmp_path):
     assert '筛选条件' in view['summary']
     assert 'score' not in view
     assert '100' not in json.dumps(view)
+
+
+def test_interrupted_model_call_cannot_report_partial_usage_as_total(tmp_path):
+    trace = tmp_path / 'trace.jsonl'
+    trace.write_text('\n'.join(map(json.dumps, [
+        {'event': 'call_started'}, {'event': 'call_completed', 'input_tokens': 4, 'output_tokens': 2},
+        {'event': 'call_started'}])), encoding='utf8')
+    view = public_result(tmp_path, state='interrupted', stage='decomposer', result=None)
+    assert view['tokens'] == {'input': None, 'output': None}
+
+
+def test_single_question_page_receives_only_display_fields(tmp_path, monkeypatch):
+    app = build(tmp_path, monkeypatch)
+    def behavior(config, question):
+        config.trace({'event': 'call_started', 'role': 'decomposer', 'messages': ['private prompt']})
+        for _ in range(105):
+            config.trace({'event': 'schema_loaded', 'samples': ['private schema sample']})
+        config.trace({'event': 'call_completed', 'role': 'decomposer', 'input_tokens': 3, 'output_tokens': 4,
+                      'response': 'private response'})
+        return 'SELECT 9223372036854775807 AS n'
+    app.behavior = behavior
+    run_id = app.start({'db_id': 'shop', 'question': 'Show the identifier'})
+    wait_done(app)
+    with client_for(app) as client:
+        raw = client.get('/api/run', params={'id': run_id})
+        compact = client.get('/api/user/run', params={'id': run_id})
+        assert raw.status_code == compact.status_code == 200
+        view = compact.json()
+        assert len(view['events']) == 100 < view['event_count']
+        assert view['usage'] == {'calls': 1, 'tokens': {'input': 3, 'output': 4}, 'simulated': False}
+        assert view['result']['feedback']['preview_rows'] == [['9223372036854775807']]
+        assert len(compact.content) < len(raw.content)
+        for marker in ('private prompt', 'private response', 'private schema sample'):
+            assert marker in raw.text
+            assert marker not in compact.text
+        assert [r['id'] for r in client.get('/api/user/runs').json()['runs']] == [run_id]
 
 
 def test_workspace_page_uses_live_results_and_keeps_old_pages(tmp_path, monkeypatch):

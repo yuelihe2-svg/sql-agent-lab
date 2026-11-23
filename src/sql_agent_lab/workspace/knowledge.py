@@ -3,10 +3,13 @@
 Documents are user claims. They are not checked against the business database
 and are not inserted into the SQL Agent prompt.
 """
+from contextlib import contextmanager
 from pathlib import Path
 import hashlib
 import json
+import logging
 import re
+import threading
 import uuid
 
 from sql_agent_lab.macsql.task_lifecycle import utc_now
@@ -18,6 +21,7 @@ FORMATS = frozenset({'markdown', 'text', 'json'})
 BODY_LIMIT = 24_000
 TITLE_LIMIT = 200
 _KEY = re.compile(r'[0-9a-f]{32}')
+_DOCUMENT_LOCK = threading.RLock()
 PUBLIC_FIELDS = (
     'id', 'datasource_id', 'title', 'format', 'content_hash', 'version',
     'provenance', 'created_at', 'updated_at', 'body', 'verification',
@@ -32,6 +36,14 @@ def knowledge_dir(workspace_db):
     return root
 
 
+@contextmanager
+def _document_operation():
+    # Local HTTP workers read metadata and files together. Reindex uses the same snapshot.
+    with _DOCUMENT_LOCK:
+        yield
+
+
+@_document_operation()
 def create_knowledge(store, workspace_db, datasource_id, title, document_format, body):
     title, document_format, body = _validate(title, document_format, body)
     store.get_data_source(datasource_id)
@@ -51,27 +63,24 @@ def create_knowledge(store, workspace_db, datasource_id, title, document_format,
         'updated_at': now,
     }
     directory = knowledge_dir(workspace_db)
-    _write_temp(directory, key, body)
+    path = _write_body(directory, key, body)
     try:
         store.insert_knowledge(record, body=body)
     except Exception:
-        _discard_temp(directory, key)
-        raise
-    try:
-        _commit_temp(directory, key)
-    except OSError:
-        store.delete_knowledge(datasource_id, record['id'])
-        _discard_temp(directory, key)
+        _discard_body(path)
         raise
     return _public(record, body)
 
 
-def update_knowledge(store, workspace_db, datasource_id, knowledge_id, title, document_format, body):
+@_document_operation()
+def update_knowledge(store, workspace_db, datasource_id, knowledge_id, title, document_format, body,
+                     *, expected_version=None):
     title, document_format, body = _validate(title, document_format, body)
     current = store.get_knowledge_row(datasource_id, knowledge_id)
     directory = knowledge_dir(workspace_db)
-    key = current['storage_key']
-    _require_key(key)
+    if expected_version is not None and (type(expected_version) is not int or expected_version != current['version']):
+        raise ValueError('业务说明版本已变化，请刷新后重新编辑。')
+    old_path = _document_path(directory, current['storage_key'])
     updated = {
         'id': current['id'],
         'datasource_id': datasource_id,
@@ -79,37 +88,36 @@ def update_knowledge(store, workspace_db, datasource_id, knowledge_id, title, do
         'format': document_format,
         'content_hash': _hash(body),
         'version': current['version'] + 1,
+        'storage_key': uuid.uuid4().hex,
         'updated_at': utc_now(),
     }
-    _write_temp(directory, key, body)
+    path = _write_body(directory, updated['storage_key'], body)
     try:
         store.update_knowledge(updated, body=body)
     except Exception:
-        _discard_temp(directory, key)
+        _discard_body(path)
         raise
-    try:
-        _commit_temp(directory, key)
-    except OSError:
-        _discard_temp(directory, key)
-        raise ValueError('Knowledge document was not saved')
+    _discard_body(old_path)
     current.update(updated)
     return _public(current, body)
 
 
+@_document_operation()
 def delete_knowledge(store, workspace_db, datasource_id, knowledge_id):
     key = store.delete_knowledge(datasource_id, knowledge_id)
     path = _document_path(knowledge_dir(workspace_db), key)
-    if path.is_file():
-        path.unlink()
+    _discard_body(path)
     return {'id': knowledge_id, 'datasource_id': datasource_id, 'deleted': True}
 
 
+@_document_operation()
 def read_knowledge(store, workspace_db, datasource_id, knowledge_id):
     row = store.get_knowledge_row(datasource_id, knowledge_id)
     body = _read_body(knowledge_dir(workspace_db), row)
     return _public(row, body)
 
 
+@_document_operation()
 def list_knowledge(store, workspace_db, datasource_id):
     documents = []
     directory = knowledge_dir(workspace_db)
@@ -118,6 +126,7 @@ def list_knowledge(store, workspace_db, datasource_id):
     return documents
 
 
+@_document_operation()
 def read_available_knowledge(store, workspace_db, datasource_id):
     """Return readable documents and ids that can no longer be verified.
 
@@ -134,6 +143,7 @@ def read_available_knowledge(store, workspace_db, datasource_id):
     return documents, skipped
 
 
+@_document_operation()
 def reindex_knowledge(store, workspace_db):
     """Rebuild the FTS rows from the knowledge files. Missing files are left out."""
     rows = []
@@ -187,30 +197,31 @@ def _document_path(directory, key):
     return path
 
 
-def _write_temp(directory, key, body):
+def _write_body(directory, key, body):
+    """Write a private, unique body before publishing its key in SQLite."""
     path = _document_path(directory, key)
-    temporary = path.with_name(path.name + '.tmp')
-    temporary.write_text(body, encoding='utf-8', newline='\n')
+    handle = path.open('xb')
+    try:
+        with handle:
+            handle.write(body.encode('utf-8'))
+    except Exception:
+        _discard_body(path)
+        raise
+    return path
 
 
-def _commit_temp(directory, key):
-    path = _document_path(directory, key)
-    temporary = path.with_name(path.name + '.tmp')
-    temporary.replace(path)
-
-
-def _discard_temp(directory, key):
-    path = _document_path(directory, key)
-    temporary = path.with_name(path.name + '.tmp')
-    if temporary.is_file():
-        temporary.unlink()
+def _discard_body(path):
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        logging.getLogger(__name__).warning('An unreferenced knowledge file could not be removed')
 
 
 def _read_body(directory, row):
     path = _document_path(directory, row['storage_key'])
     if not path.is_file():
         raise ValueError('Knowledge document is missing')
-    body = path.read_text(encoding='utf-8')
+    body = path.read_bytes().decode('utf-8')
     if _hash(body) != row['content_hash']:
         raise ValueError('Knowledge document does not match its record')
     return body

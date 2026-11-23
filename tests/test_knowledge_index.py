@@ -1,6 +1,7 @@
 """Knowledge FTS stays inside the workspace file and follows document versions."""
 from contextlib import closing
 import sqlite3
+import pytest
 
 from sql_agent_lab.workspace.database import WorkspaceStore
 from sql_agent_lab.workspace.knowledge import create_knowledge, delete_knowledge, update_knowledge
@@ -86,3 +87,57 @@ def test_bm25_bundle_keeps_scores_separate_and_rejects_embedding():
         assert 'not configured' in str(error)
     else:
         raise AssertionError('embedding strategy was accepted')
+
+
+def test_failed_save_keeps_previous_version_body_and_index(tmp_path, monkeypatch):
+    from sql_agent_lab.workspace.knowledge import knowledge_dir, read_knowledge
+    store = _store(tmp_path)
+    original = create_knowledge(store, store.path, 'shop', 'Rules', 'text', 'alpha\r\n第一行')
+    directory = knowledge_dir(store.path)
+    original_files = set(directory.iterdir())
+    assert read_knowledge(store, store.path, 'shop', original['id']) == original
+    with monkeypatch.context() as fault:
+        def fail(*args, **kwargs):
+            raise OSError('injected commit failure')
+        fault.setattr(store, 'update_knowledge', fail)
+        with pytest.raises(OSError):
+            update_knowledge(store, store.path, 'shop', original['id'], 'Rules', 'text', 'beta')
+    assert set(directory.iterdir()) == original_files
+    assert read_knowledge(store, store.path, 'shop', original['id']) == original
+    assert store.search_knowledge('shop', 'beta', 5) == []
+    assert store.search_knowledge('shop', 'alpha', 5)[0]['version'] == '1'
+    revised = update_knowledge(store, store.path, 'shop', original['id'], 'Rules', 'text', 'beta',
+                               expected_version=1)
+    with pytest.raises(ValueError, match='版本'):
+        update_knowledge(store, store.path, 'shop', original['id'], 'Rules', 'text', 'stale',
+                         expected_version=1)
+    assert read_knowledge(store, store.path, 'shop', original['id']) == revised
+    assert len(list(directory.iterdir())) == 1
+
+
+def test_two_editors_saving_one_version_commit_exactly_one_revision(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from sql_agent_lab.workspace.knowledge import knowledge_dir, read_knowledge
+
+    store = _store(tmp_path)
+    doc = create_knowledge(store, store.path, 'shop', 'Rules', 'text', 'original')
+    editors = Barrier(2)
+    def save(text):
+        editors.wait(timeout=5)
+        try:
+            return update_knowledge(store, store.path, 'shop', doc['id'], 'Rules', 'text', text, expected_version=1)
+        except ValueError as error:
+            assert '版本' in str(error)
+            return None
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        saved = [item for item in pool.map(save, ('alpha', 'bravo')) if item is not None]
+    assert len(saved) == 1
+    winner = saved[0]
+    assert winner['version'] == 2
+    assert read_knowledge(store, store.path, 'shop', doc['id']) == winner
+    assert store.search_knowledge('shop', winner['body'], 1)[0]['content_hash'] == winner['content_hash']
+    loser = 'bravo' if winner['body'] == 'alpha' else 'alpha'
+    assert store.search_knowledge('shop', loser, 1) == []
+    assert len(list(knowledge_dir(store.path).iterdir())) == 1

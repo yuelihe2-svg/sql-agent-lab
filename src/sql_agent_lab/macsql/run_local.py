@@ -8,6 +8,7 @@ import argparse
 from dataclasses import asdict
 import json
 import os
+import re
 from pathlib import Path
 import time
 from uuid import uuid4
@@ -65,7 +66,10 @@ class LocalOllamaModel:
             options["num_thread"] = self.num_threads
         if self.cpu_only:
             options["num_gpu"] = 0
-        response_format = 'json' if role == 'selector' or (messages and messages[-1]['content'].startswith(('SEMANTIC_REVIEW_V1', 'SEMANTIC_REVIEW_V2', 'SEMANTIC_REVIEW_V3', 'SEMANTIC_REVIEW_V4', 'SEMANTIC_REVIEW_V5', 'SEMANTIC_REVIEW_V6', 'SEMANTIC_REVIEW_V7', 'SEMANTIC_REVIEW_V8', 'OUTPUT_REQUIREMENTS_V1', 'OUTPUT_REQUIREMENTS_V2', 'OUTPUT_REQUIREMENTS_V3'))) else None
+        # The workflow prompt precedes the optional grounding and history messages.
+        prompt = next((item['content'] for item in messages if item.get('role') == 'user'), '')
+        structured = re.match(r'^(?:SEMANTIC_REVIEW_V[1-8]|OUTPUT_REQUIREMENTS_V[1-3])\b', prompt)
+        response_format = 'json' if role == 'selector' or structured else None
         request = {
             "model": model, "messages": messages, "format": response_format, "stream": False,
             "think": False, "keep_alive": "5m",
@@ -197,10 +201,8 @@ def main(argv=None):
         (output / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         start = time.monotonic()
         try:
-            sql = agent.run(question)
-            feedback = tools.compile_sql_readonly(question.db_id, sql)
+            sql, feedback = agent.run_with_feedback(question)
             if feedback['status'] == 'ok':
-                feedback = tools.execute_sql_readonly(question.db_id, sql)
                 score = score_sql(tools, reference, sql)
             else:
                 # A rejected SQL identifier must not regain credit via SQLite's

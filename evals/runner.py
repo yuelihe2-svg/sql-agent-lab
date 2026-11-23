@@ -11,7 +11,6 @@ from sql_agent_lab.macsql.tools import SQLiteTools, ToolLimits
 from .adapters.agent_adapter import VARIANTS, AgentVariantAdapter, refuse_agent_mode
 from .graders.sql_grader import SCORER, fetch_rows, grade_sql
 from .report import write_reports
-from .shopbench_v1.catalog import materialize
 from .shopbench_v1.seed import GENERATOR_VERSION, generate_all
 
 
@@ -49,7 +48,6 @@ def _public_grade(grade: dict) -> dict:
 
 
 def run_fixture(output_dir: Path, *, database_dir: Path | None = None) -> dict:
-    materialize(ROOT)
     database_dir = database_dir or (output_dir / "databases")
     manifest = generate_all(database_dir)
     databases = {item["source_id"]: database_dir / item["filename"] for item in manifest["databases"]}

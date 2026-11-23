@@ -20,7 +20,7 @@ from .models import (
 )
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 # One implicit local workspace. Restarts reuse this id instead of inserting another.
 LOCAL_WORKSPACE_ID = '5c6a1e0a-7b34-4d5e-9f10-0a1b2c3d4e5f'
 LOCAL_WORKSPACE_NAME = 'Local'
@@ -143,7 +143,12 @@ CREATE TABLE IF NOT EXISTS knowledge_document (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
-"""), (3, FTS_CREATE_SQL + ';'),)
+"""), (3, FTS_CREATE_SQL + ';'), (4, """
+CREATE INDEX IF NOT EXISTS agent_run_conversation_start ON agent_run(conversation_id, started_at, id);
+CREATE INDEX IF NOT EXISTS agent_run_message ON agent_run(user_message_id);
+CREATE INDEX IF NOT EXISTS conversation_recent ON conversation(workspace_id, updated_at DESC, id);
+CREATE INDEX IF NOT EXISTS knowledge_by_source ON knowledge_document(datasource_id, updated_at DESC, id);
+"""))
 
 
 def migrate(path):
@@ -153,6 +158,9 @@ def migrate(path):
         _reject_foreign(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with closing(_connect(path)) as conn:
+        # executescript implicitly commits under legacy transaction control.
+        conn.autocommit = True
+        conn.execute('BEGIN IMMEDIATE')
         conn.execute(
             'CREATE TABLE IF NOT EXISTS schema_migrations ('
             'version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)')
@@ -169,7 +177,7 @@ def migrate(path):
             conn.execute(
                 'INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)',
                 (version, utc_now()))
-        conn.commit()
+        conn.execute('COMMIT')
     return path
 
 
@@ -179,8 +187,8 @@ def sync_registered_sources(path, catalog):
     `catalog` must already be the path-free public list. This function does not
     open a user database and does not store filesystem paths.
     """
-    if not isinstance(catalog, list) or not catalog:
-        raise ValueError('At least one public data source is required')
+    if not isinstance(catalog, list):
+        raise ValueError('Expected a list of public data sources')
     store = WorkspaceStore(path)
     created_at = utc_now()
     store.ensure_local_workspace(created_at)
@@ -212,7 +220,6 @@ def record_saved_run(store, *, run_id, manifest, task, result, artifact_dir, con
     if not isinstance(text, str) or not isinstance(datasource_id, str):
         raise ValueError('Saved run is missing a question')
     created_at = manifest.get('created_at') or task.get('started_at')
-    store.ensure_local_user(created_at)
     body = text.strip()
     try:
         existing = store.get_agent_run(run_id)
@@ -224,6 +231,8 @@ def record_saved_run(store, *, run_id, manifest, task, result, artifact_dir, con
         run_id, datasource_id, manifest, task, result, artifact_dir,
         conversation_id=None if existing is None else existing.conversation_id,
         user_message_id=None if existing is None else existing.user_message_id)
+    if existing is None:
+        store.ensure_local_user(created_at)
     if existing is None and conversation_id:
         projected = replace(projected, conversation_id=conversation_id, user_message_id=None)
         return store.attach_run(
@@ -427,6 +436,12 @@ class WorkspaceStore:
             raise ValueError('Data source is not registered')
         return _source_from_row(row)
 
+    def discard_unpublished_source(self, source_id):
+        """Roll back a newly inserted upload. Foreign keys protect referenced sources."""
+        with self._session() as conn:
+            conn.execute('DELETE FROM data_source WHERE id = ? AND workspace_id = ?',
+                         (source_id, LOCAL_WORKSPACE_ID))
+
     def list_data_sources(self, workspace_id):
         with self._session() as conn:
             rows = conn.execute(
@@ -508,6 +523,19 @@ class WorkspaceStore:
                     'SELECT * FROM agent_run WHERE conversation_id = ? ORDER BY started_at, id',
                     (conversation_id,))
             return [_run_from_row(row) for row in rows]
+
+    def recent_message_runs(self, conversation_id, *, exclude_run_id, limit):
+        """Return joined turns in message order without loading an entire transcript."""
+        with self._session() as conn:
+            rows = conn.execute(
+                'SELECT r.*, m.seq, m.role, m.body, m.created_at AS message_created_at '
+                'FROM message m JOIN agent_run r ON r.user_message_id = m.id '
+                'AND r.conversation_id = m.conversation_id '
+                'WHERE m.conversation_id = ? AND r.id != ? ORDER BY m.seq DESC LIMIT ?',
+                (conversation_id, exclude_run_id, limit)).fetchall()
+        return [(Message(row['user_message_id'], row['seq'], row['role'], row['body'],
+                         row['message_created_at'], conversation_id), _run_from_row(row))
+                for row in reversed(rows)]
 
     def attach_run(self, *, conversation_id, body, created_at, run):
         """Append one user message and its run onto an existing conversation."""
@@ -622,18 +650,14 @@ class WorkspaceStore:
 
     def update_knowledge(self, record, *, body=None):
         with self._session() as conn:
-            current = conn.execute(
-                'SELECT version FROM knowledge_document WHERE id = ? AND datasource_id = ?',
-                (record['id'], record['datasource_id'])).fetchone()
-            if current is None:
-                raise ValueError('Knowledge document is not registered')
-            if current['version'] != record['version'] - 1:
+            changed = conn.execute(
+                'UPDATE knowledge_document SET title = ?, format = ?, content_hash = ?, storage_key = ?, '
+                'version = ?, updated_at = ? WHERE id = ? AND datasource_id = ? AND version = ?',
+                (record['title'], record['format'], record['content_hash'], record['storage_key'],
+                 record['version'], record['updated_at'], record['id'], record['datasource_id'],
+                 record['version'] - 1))
+            if changed.rowcount != 1:
                 raise ValueError('Knowledge document version is stale')
-            conn.execute(
-                'UPDATE knowledge_document SET title = ?, format = ?, content_hash = ?, '
-                'version = ?, updated_at = ? WHERE id = ? AND datasource_id = ?',
-                (record['title'], record['format'], record['content_hash'], record['version'],
-                 record['updated_at'], record['id'], record['datasource_id']))
             if body is not None:
                 upsert_index(conn, record, body)
 
@@ -789,7 +813,7 @@ def _reject_foreign(path):
         with closing(sqlite3.connect(uri, uri=True)) as conn:
             conn.execute('PRAGMA query_only=ON')
             rows = conn.execute(
-                "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+                "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT GLOB 'sqlite_*'")
             names = {row[0] for row in rows}
     except sqlite3.Error as error:
         raise ValueError('Refusing to change a database that is not an application workspace') from error
@@ -805,7 +829,7 @@ def column_names(path):
     with closing(sqlite3.connect(uri, uri=True)) as conn:
         conn.execute('PRAGMA query_only=ON')
         tables = [row[0] for row in conn.execute(
-            "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")]
+            "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT GLOB 'sqlite_*'")]
         found = set()
         for table in tables:
             if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', table):

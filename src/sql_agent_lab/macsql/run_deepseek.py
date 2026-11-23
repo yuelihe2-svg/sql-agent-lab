@@ -65,10 +65,8 @@ def worker(args):
             context=ContextPolicy(input_budget=14000, context_window=16384),
             schema_retrieval=True, value_lookup=True,
             semantic_review=getattr(args, 'semantic_review', False), semantic_output_tokens=1600)
-        sql = ReferenceMacSQLAgent({r: MODEL for r in ROLES}, config=config).run(question)
-        feedback = raw.compile_sql_readonly(question.db_id, sql)
-        if feedback['status'] == 'ok':
-            feedback = raw.execute_sql_readonly(question.db_id, sql)
+        agent = ReferenceMacSQLAgent({r: MODEL for r in ROLES}, config=config)
+        sql, feedback = agent.run_with_feedback(question)
         result.update(status='completed' if feedback['status'] == 'ok' else 'failed', sql=sql, feedback=feedback)
         # Gold SQL is used only after the graph ends, never in role messages.
         emit({'event': 'evaluation_started'})

@@ -64,5 +64,12 @@ class SourceRegistry:
     def databases(self):
         return {key: source.path for key, source in self._sources.items()}
 
+    def with_source(self, source):
+        """Validate an upload in a new snapshot before publishing it to readers."""
+        updated = SourceRegistry()
+        updated._sources = self._sources.copy()
+        updated.add(source)
+        return updated
+
     def catalog(self):
         return [self._sources[key].public() for key in sorted(self._sources)]

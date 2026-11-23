@@ -38,3 +38,5 @@ def test_year_change_uses_latest_city():
     assert '杭州' in text and '上海' not in text and '2024' not in text
     assert resolve_year_followup('新问题：改成2023年呢？', turns) == '新问题：改成2023年呢？'
     assert resolve_year_followup('改成2023年呢？', []) == '改成2023年呢？'
+    assert resolve_year_followup('改成2023年呢？', [{**turns[-1], 'sql_truncated': True}]) == '改成2023年呢？'
+    assert "'2023'" in resolve_year_followup('改成2023年呢？', [{'sql': "SELECT id FROM t WHERE year='2024'"}])

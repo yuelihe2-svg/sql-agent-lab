@@ -104,18 +104,25 @@ class MemoryKnowledgeIndex:
     def __init__(self, documents):
         self.status = 'memory'
         self.connection = sqlite3.connect(':memory:')
-        if not fts5_available(self.connection):
-            raise FTS5Unavailable('This SQLite build does not provide FTS5')
-        self.connection.execute(FTS_CREATE_SQL)
-        for document in documents or []:
-            if not isinstance(document, dict) or not isinstance(document.get('body'), str):
-                continue
-            if not document.get('id') or not document.get('datasource_id'):
-                continue
-            upsert_index(self.connection, document, document['body'])
+        try:
+            if not fts5_available(self.connection):
+                raise FTS5Unavailable('This SQLite build does not provide FTS5')
+            self.connection.execute(FTS_CREATE_SQL)
+            for document in documents or []:
+                if not isinstance(document, dict) or not isinstance(document.get('body'), str):
+                    continue
+                if not document.get('id') or not document.get('datasource_id'):
+                    continue
+                upsert_index(self.connection, document, document['body'])
+        except Exception:
+            self.close()
+            raise
 
     def search(self, datasource_id, question, limit):
         return search_index(self.connection, datasource_id, question, limit)
+
+    def close(self):
+        self.connection.close()
 
 
 class WorkspaceKnowledgeIndex:
@@ -130,7 +137,7 @@ class WorkspaceKnowledgeIndex:
         self._repair_if_needed()
         try:
             return self.store.search_knowledge(datasource_id, question, limit)
-        except sqlite3.DatabaseError:
+        except (sqlite3.DatabaseError, KnowledgeIndexError):
             self._rebuild()
             return self.store.search_knowledge(datasource_id, question, limit)
 

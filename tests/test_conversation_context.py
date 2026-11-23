@@ -48,6 +48,25 @@ def test_city_follow_up_keeps_year_and_topic():
     assert context['new_topic'] is False
 
 
+def test_followup_after_new_topic_cannot_revive_an_older_query():
+    history = [turn('旧查询', sql='SELECT old_metric'), turn('新问题：查询退款', sql='SELECT refunds')]
+    context = build('那杭州呢？', history)
+    assert 'refunds' in context['history_block']
+    assert 'old_metric' not in context['history_block']
+
+
+def test_budget_handles_two_digit_turns_and_utf8_exactly():
+    history = [turn(f'第{n}轮', sql='SELECT 9') for n in range(24)]
+    whole = build('继续', history, budget_bytes=10000)
+    for limit in (whole['budget']['used'], whole['budget']['used'] - 1, 1600, 20):
+        actual = build('继续', history, budget_bytes=limit)
+        assert actual['budget']['used'] == len(('继续' + actual['history_block']).encode())
+        assert actual['budget']['used'] <= limit
+        if limit >= 1600 and len(actual['turns']) < len(history):
+            extra = len(actual['turns']) + 1
+            assert build('继续', history[-extra:], budget_bytes=10000)['budget']['used'] > limit
+
+
 def test_time_follow_up_keeps_the_subject():
     context = build('改成2023年', [
         turn('2024年上海门店的净收款', sql='SELECT net FROM payments WHERE city = \'上海\''),

@@ -1,11 +1,14 @@
 """Local SQLite observatory with optional BIRD evaluation; startup invokes no models."""
 import argparse
-from dataclasses import asdict
+from contextlib import ExitStack
+from copy import deepcopy
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import inspect
 import json
 from pathlib import Path
+import sqlite3
 import threading
 import time
 from urllib.parse import urlparse, parse_qs
@@ -23,7 +26,7 @@ from .reference_core import JsonlTrace, ROLES, WorkflowConfig
 from .run_local import LocalOllamaModel
 from .tools import SQLiteTools, ToolLimits
 from .evaluation_audit import EvaluationSession
-from .trace_support import TraceEmitter, review_timing
+from .trace_support import TraceEmitter, review_timing, token_totals
 from .semantic_review import CONTRACT
 from .task_lifecycle import (change_task, event_stage, new_task, result_task_state,
                              task_view, write_json_atomic)
@@ -56,9 +59,13 @@ class ObservedTools:
             started = time.monotonic()
             try:
                 output = method(*args, **kwargs)
+                if self.stop.is_set():
+                    raise Stopped('Stopped during the tool call')
             except Exception as error:
                 self.emit({'event': 'tool_failed', 'tool': name, 'tool_call_id': call_id,
                            'error': str(error), 'elapsed_seconds': time.monotonic() - started})
+                if self.stop.is_set() and not isinstance(error, Stopped):
+                    raise Stopped('Stopped during the tool call') from error
                 raise
             self.emit({'event': 'tool_completed', 'tool': name, 'tool_call_id': call_id,
                        'output': output, 'elapsed_seconds': time.monotonic() - started})
@@ -88,9 +95,10 @@ class Observatory:
         # SourceRegistry remains the authority for SQLite paths. The optional
         # metadata file receives only the public catalog.
         self.workspace_db = None
+        self.workspace_store = None
         if workspace_db is not None:
             from sql_agent_lab.workspace.database import sync_registered_sources
-            sync_registered_sources(workspace_db, self.sources.catalog())
+            self.workspace_store = sync_registered_sources(workspace_db, self.sources.catalog())
             self.workspace_db = Path(workspace_db)
         self.dataset = self.benchmark.dataset if self.benchmark else []
         self.metadata = load_metadata(metadata) if metadata else None
@@ -101,14 +109,19 @@ class Observatory:
         self.active = None
         self.tasks = {}  # Current-process snapshots, also available if saving fails.
         self._run_conversation = {}
+        self._profiles = {}
+        self._profile_lock = threading.Lock()
 
     def upload_database(self, payload):
         import base64
         import binascii
         from .data_sources import SQLiteSource
         from sql_agent_lab.workspace.profile import extract_profile
-        from sql_agent_lab.workspace.database import sync_registered_sources
-        self._workspace()
+        from sql_agent_lab.workspace.database import LOCAL_WORKSPACE_ID
+        from sql_agent_lab.workspace.knowledge import create_knowledge, delete_knowledge
+        from sql_agent_lab.workspace.models import data_source_from_catalog
+        from .task_lifecycle import utc_now
+        store = self._workspace()
         name = payload.get('name', '')
         description = payload.get('description', '')
         if not isinstance(name, str) or not 1 <= len(name.strip()) <= 100:
@@ -121,37 +134,43 @@ class Observatory:
             raise ValueError('数据库文件编码无效')
         if not data.startswith(b'SQLite format 3\x00') or len(data) > 20 * 1024 * 1024:
             raise ValueError('请上传不超过20 MB的有效 SQLite 文件')
-        with self.lock:
+        with self.lock, ExitStack() as rollback:
             if self.active:
                 raise ValueError('请等待当前查询结束后添加数据库')
             source_id = 'upload_' + uuid4().hex
             directory = self.output / 'databases'
             directory.mkdir(exist_ok=True)
             target = directory / (source_id + '.sqlite')
+            rollback.callback(target.unlink, missing_ok=True)
             target.write_bytes(data)
             try:
                 profile = extract_profile(target)
-            except Exception:
-                target.unlink(missing_ok=True)
-                raise ValueError('数据库无法读取，请上传完整、未加密的 SQLite 文件')
+            except ValueError as error:
+                raise ValueError('数据库无法读取，请上传完整、未加密的 SQLite 文件') from error
             source = SQLiteSource(source_id, name.strip(), target)
+            updated = self.sources.with_source(source)
+            bindings = updated.databases
             document = json.loads(self.upload_registry.read_text(encoding='utf8')) if self.upload_registry.exists() else {'sources': []}
             document['sources'].append({'id': source_id, 'name': name.strip(), 'path': str(target), 'kind': 'sqlite'})
-            sync_registered_sources(self.workspace_db, self.sources.catalog() + [source.public()])
-            self.sources.add(source)
-            self.databases = self.sources.databases
-            write_json_atomic(self.upload_registry, document)
+            store.add_data_source(data_source_from_catalog(
+                LOCAL_WORKSPACE_ID, source.public(), secret_ref='sources:' + source_id, created_at=utc_now()))
+            rollback.callback(store.discard_unpublished_source, source_id)
             if description.strip():
-                self.add_source_knowledge(source_id, {'title': '业务说明', 'format': 'text', 'body': description.strip()})
+                note = create_knowledge(store, self.workspace_db, source_id, '业务说明', 'text', description.strip())
+                rollback.callback(delete_knowledge, store, self.workspace_db, source_id, note['id'])
+            write_json_atomic(self.upload_registry, document)
+            self.sources, self.databases = updated, bindings
+            rollback.pop_all()
             return {'source': source.public(), 'profile': profile}
 
     def catalog(self):
-        return {'databases': sorted(self.databases), 'sources': self.sources.catalog(),
+        catalog = self.sources.catalog()
+        return {'databases': [s['id'] for s in catalog], 'sources': catalog,
                 'benchmark_available': self.benchmark is not None,
                 'questions': [asdict(q) for q, _ in self.dataset],
                 'semantic_review_contract': CONTRACT, 'semantic_output_tokens': 1600}
 
-    def _save_task(self, run_id, task):
+    def _save_task(self, run_id, task, *, project=True):
         """Called under self.lock so stop requests and worker updates cannot race."""
         task = {key: value for key, value in task.items() if key != 'persistence_error'}
         self.tasks[run_id] = task
@@ -161,7 +180,8 @@ class Observatory:
             task['persistence_error'] = str(error)
             raise
         else:
-            self._project_workspace(run_id)
+            if project:
+                self._project_workspace(run_id)
 
     def _project_workspace(self, run_id):
         """Copy a saved run into the optional workspace database.
@@ -172,15 +192,14 @@ class Observatory:
         if self.workspace_db is None:
             return
         try:
-            import sqlite3
-            from sql_agent_lab.workspace.database import WorkspaceStore, record_saved_run
+            from sql_agent_lab.workspace.database import record_saved_run
             path = self.output / run_id
             manifest = json.loads((path / 'manifest.json').read_text(encoding='utf8'))
             task = json.loads((path / 'task.json').read_text(encoding='utf8'))
             result_path = path / 'result.json'
             result = json.loads(result_path.read_text(encoding='utf8')) if result_path.is_file() else None
             record_saved_run(
-                WorkspaceStore(self.workspace_db), run_id=run_id, manifest=manifest, task=task,
+                self._workspace(), run_id=run_id, manifest=manifest, task=task,
                 result=result, artifact_dir=str(path.resolve()),
                 conversation_id=self._run_conversation.get(run_id))
         except (OSError, sqlite3.Error, ValueError) as error:
@@ -217,13 +236,15 @@ class Observatory:
                 if task['stage'] != stage:
                     self._save_task(run_id, change_task(task, stage=stage))
 
-    def paths(self):
+    def paths(self, recorded=None):
         paths = {p.name: p for p in self.output.iterdir() if p.is_dir() and (p/'manifest.json').exists()}
         if self.history:
             for p in self.history.glob('local-pilot-*'):
                 if (p/'manifest.json').exists():
                     paths['history-' + p.name] = p
-        paths.update({key: value['path'] for key, value in self.recorded_runs().items()})
+        if recorded is None:
+            recorded = self.recorded_runs()
+        paths.update({key: value['path'] for key, value in recorded.items()})
         return paths
 
     def recorded_runs(self):
@@ -249,7 +270,7 @@ class Observatory:
     def _run_index(self):
         recorded = self.recorded_runs()
         rows = []
-        for key, path in sorted(self.paths().items(), reverse=True):
+        for key, path in sorted(self.paths(recorded).items(), reverse=True):
             manifest = json.loads((path/'manifest.json').read_text(encoding='utf8'))
             result = json.loads((path/'result.json').read_text(encoding='utf8')) if (path/'result.json').exists() else {}
             rows.append({'id': key, 'question': manifest['question'], 'model': manifest.get('model', {}).get('name'),
@@ -272,14 +293,40 @@ class Observatory:
                             'totals': totals})
         return {'active': self.active, 'runs': rows, 'batches': batches}
 
-    def read_run(self, run_id):
+    def user_runs(self):
+        from .user_view import public_question, user_task
+        rows = []
         with self.lock:
-            return self._read_run(run_id)
+            active = self.active
+            for key, path in sorted(self.paths().items(), reverse=True):
+                manifest = json.loads((path / 'manifest.json').read_text(encoding='utf8'))
+                question = public_question(manifest)
+                if question['question_id'] != 'custom':
+                    continue
+                result_path = path / 'result.json'
+                result = json.loads(result_path.read_text(encoding='utf8')) if result_path.is_file() else {}
+                rows.append({'id': key, 'question': question, 'status': result.get('status'),
+                             'task': user_task(self._task_view(key, path, result))})
+                if len(rows) == 20:
+                    break
+        return {'active': active, 'runs': rows}
 
-    def _read_run(self, run_id):
-        path = self.paths().get(run_id)
+    def read_run(self, run_id, *, user=False):
+        with self.lock:
+            return self._read_run(run_id, user=user)
+
+    def _read_run(self, run_id, *, user=False):
+        records = self.recorded_runs()
+        path = self.paths(records).get(run_id)
         if path is None:
             raise ValueError('Unknown run')
+        result = json.loads((path/'result.json').read_text(encoding='utf8')) if (path/'result.json').exists() else None
+        manifest = json.loads((path/'manifest.json').read_text(encoding='utf8'))
+        task = self._task_view(run_id, path, result)
+        if user:
+            from .user_view import user_run
+            return user_run(path, run_id, manifest, result, task, active=self.active == run_id,
+                            stop_requested=self.active == run_id and self.stop.is_set())
         events = []
         if (path/'trace.jsonl').exists():
             for line in (path/'trace.jsonl').read_text(encoding='utf8').splitlines():
@@ -287,18 +334,17 @@ class Observatory:
                     events.append(json.loads(line))
                 except json.JSONDecodeError:
                     pass  # A concurrent append may not have written its final newline yet.
-        result = json.loads((path/'result.json').read_text(encoding='utf8')) if (path/'result.json').exists() else None
         evaluation = (json.loads((path/'evaluation-evidence.json').read_text(encoding='utf8'))
                       if result is not None and (path/'evaluation-evidence.json').exists() else None)
-        recorded = self.recorded_runs().get(run_id)
+        recorded = records.get(run_id)
         # Normalize the display timestamp without changing the saved trace.
         events = [{**e, 'elapsed': e['elapsed_seconds_since_start']}
                   if 'elapsed' not in e and 'elapsed_seconds_since_start' in e else e for e in events]
         return {'id': run_id, 'historical': run_id.startswith('history-') or recorded is not None,
-                'task': self._task_view(run_id, path, result),
+                'task': task,
                 'recorded': recorded is not None,
                 'recorded_model_version': recorded['protocol'].get('documented_version') if recorded else None,
-                'manifest': json.loads((path/'manifest.json').read_text(encoding='utf8')),
+                'manifest': manifest,
                 'events': events, 'result': result, 'evaluation_evidence': evaluation, 'active': self.active == run_id,
                 'stop_requested': self.active == run_id and self.stop.is_set()}
 
@@ -347,8 +393,8 @@ class Observatory:
     def conversation_detail(self, conversation_id):
         store = self._workspace()
         conversation = store.get_conversation(str(conversation_id))
-        messages = [_public_message(item) for item in store.list_messages(conversation.id)]
         with self.lock:
+            messages = [_public_message(item) for item in store.list_messages(conversation.id)]
             runs = [self._run_summary(item) for item in store.list_agent_runs(conversation.id)]
         return {'conversation': _public_conversation(conversation), 'messages': messages, 'runs': runs}
 
@@ -368,9 +414,6 @@ class Observatory:
             'use_conversation_context': True,
             **{key: payload[key] for key in ('use_grounding', 'retrieval_strategy', 'use_conversation_context') if key in payload},
         })
-        task = self.tasks.get(run_id, {})
-        if task.get('persistence_error'):
-            raise RuntimeError(task['persistence_error'])
         run = store.get_agent_run(run_id)
         if run.conversation_id != conversation.id:
             raise RuntimeError('Conversation was not saved')
@@ -379,15 +422,19 @@ class Observatory:
     def refresh_profile(self, source_id):
         source = self._source_record(source_id)
         from sql_agent_lab.workspace.database import LOCAL_WORKSPACE_ID
-        from sql_agent_lab.workspace.profile import extract_profile, public_profile
-        extracted = extract_profile(self.databases[source.id])
-        extracted['extracted_at'] = datetime.now(timezone.utc).isoformat()
-        stored = {key: extracted[key] for key in (
-            'kind', 'tables', 'relationships', 'fingerprint', 'coverage')}
-        self._workspace().save_profile(
-            source.id, LOCAL_WORKSPACE_ID, extracted['fingerprint'], extracted['extracted_at'],
-            json.dumps(stored, ensure_ascii=False))
-        return public_profile(source, extracted)
+        from sql_agent_lab.workspace.profile import read_profile_if_changed, public_profile
+        with self._profile_lock:
+            previous, cached = self._profiles.get(source.id, (None, None))
+            stamp, extracted = read_profile_if_changed(self.databases[source.id], previous)
+            if extracted is None:
+                return deepcopy(cached)
+            serialized = json.dumps(extracted, ensure_ascii=False)
+            extracted['extracted_at'] = datetime.now(timezone.utc).isoformat()
+            self._workspace().save_profile(
+                source.id, LOCAL_WORKSPACE_ID, extracted['fingerprint'], extracted['extracted_at'], serialized)
+            profile = public_profile(source, extracted)
+            self._profiles[source.id] = (stamp, profile)
+            return deepcopy(profile)
 
     def list_source_knowledge(self, source_id):
         self._source_record(source_id)
@@ -413,7 +460,8 @@ class Observatory:
         from sql_agent_lab.workspace.knowledge import update_knowledge
         return update_knowledge(
             self._workspace(), self.workspace_db, source_id, knowledge_id,
-            payload.get('title'), payload.get('format'), payload.get('body'))
+            payload.get('title'), payload.get('format'), payload.get('body'),
+            expected_version=payload.get('expected_version'))
 
     def delete_source_knowledge(self, source_id, knowledge_id):
         self._source_record(source_id)
@@ -487,16 +535,16 @@ class Observatory:
     def _workspace(self):
         if self.workspace_db is None:
             raise ValueError('Workspace database is not enabled')
-        from sql_agent_lab.workspace.database import WorkspaceStore
-        return WorkspaceStore(self.workspace_db)
+        return self.workspace_store
 
     def _run_summary(self, run):
         path = self.output / run.id
         view = None
+        result = None
         status = run.result_status
         score = run.score
-        if (path / 'manifest.json').is_file():
-            result = None
+        managed = (path / 'manifest.json').is_file()
+        if managed:
             result_path = path / 'result.json'
             if result_path.is_file():
                 loaded = json.loads(result_path.read_text(encoding='utf8'))
@@ -526,10 +574,10 @@ class Observatory:
             'score': score,
             'semantic_review': run.semantic_review,
             'result': public_result(
-                path if (path / 'manifest.json').is_file() else None,
+                path if managed else None,
                 state=view['state'] if view else run.state,
                 stage=(view.get('stage') if view else run.stage) or None,
-                result=result if (path / 'manifest.json').is_file() else None,
+                result=result,
                 task_error=(view.get('error') if view else run.error) or None),
         }
         summary['error'] = public_notice(summary['error'])
@@ -540,14 +588,16 @@ class Observatory:
         return summary
 
     def start(self, payload):
+        for option in ('retrieval', 'semantic_review'):
+            if option in payload and not isinstance(payload[option], bool):
+                raise ValueError(f'{option} must be a boolean')
         conversation_id = payload.get('conversation_id')
         if conversation_id is not None:
             if self.workspace_db is None:
                 raise ValueError('Workspace database is not enabled')
             if payload.get('question_id') is not None:
                 raise ValueError('A conversation message cannot select a benchmark question')
-            from sql_agent_lab.workspace.database import WorkspaceStore
-            conversation = WorkspaceStore(self.workspace_db).get_conversation(str(conversation_id))
+            conversation = self._workspace().get_conversation(str(conversation_id))
             supplied = payload.get('db_id', payload.get('datasource_id', conversation.datasource_id))
             if 'datasource_id' in payload and payload.get('datasource_id') != conversation.datasource_id:
                 raise ValueError('A conversation is bound to one data source')
@@ -575,6 +625,9 @@ class Observatory:
             raise ValueError('use_conversation_context must be a boolean')
         if use_history and conversation_id is None:
             raise ValueError('Conversation context requires a conversation')
+        with self.lock:
+            if self.active:
+                raise ValueError('A run is already active')
         prepared = self._prepare_grounding(question, payload)
         with self.lock:
             if self.active:
@@ -582,8 +635,6 @@ class Observatory:
             run_id = datetime.now().strftime('%Y%m%d-%H%M%S-') + uuid4().hex[:6]
             path = self.output / run_id
             path.mkdir()
-            if conversation_id is not None:
-                self._run_conversation[run_id] = str(conversation_id)
             manifest = {'question': asdict(question), 'model': {'name': 'qwen3:4b-instruct'},
                         'mode': 'local_inference', 'created_at': datetime.now(timezone.utc).isoformat(),
                         'benchmark': reference is not None, 'schema_retrieval': bool(payload.get('retrieval', True)),
@@ -600,16 +651,25 @@ class Observatory:
                 manifest['conversation_id'] = str(conversation_id)
             if prepared['grounding_block']:
                 manifest['grounding_block'] = prepared['grounding_block']
-            (path/'manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf8')
+            write_json_atomic(path/'manifest.json', manifest)
+            if conversation_id is not None:
+                self._run_conversation[run_id] = str(conversation_id)
+            attached = False
             try:
                 self._save_task(run_id, new_task())
+                failure = self.tasks[run_id].get('persistence_error')
+                if conversation_id is not None and failure:
+                    raise RuntimeError(failure)
+                attached = True
                 self.active = run_id
                 self.stop.clear()
                 threading.Thread(target=self.work, args=(run_id, question, reference, manifest), daemon=True).start()
             except Exception as error:
                 try:
-                    self._save_task(run_id, change_task(self.tasks[run_id], state='failed', error=str(error)))
+                    self._save_task(run_id, change_task(self.tasks[run_id], state='failed', error=str(error)),
+                                    project=attached or conversation_id is None)
                 finally:
+                    self._run_conversation.pop(run_id, None)
                     self.active = None
                 raise
         return run_id
@@ -632,17 +692,52 @@ class Observatory:
                     # A restart derives interrupted state from unfinished disk data.
                     pass
                 finally:
+                    self._run_conversation.pop(run_id, None)
                     self.active = None
+
+    def _prepare_followup(self, conversation_id, run_id, question, emit):
+        from sql_agent_lab.workspace.answer_checks import (
+            NeedsClarification, clarification, resolve_year_followup)
+        from sql_agent_lab.workspace.conversation_context import (
+            build_conversation_context, explicitly_starts_topic, turns_from_public_records)
+
+        # A rendered turn uses at least 80 bytes. 32 candidates exceed the
+        # default 1600-byte prompt budget even before headings or question text.
+        pairs = self._workspace().recent_message_runs(conversation_id, exclude_run_id=run_id, limit=32)
+        messages = [_public_message(message) for message, _ in pairs]
+        runs = [self._run_summary(run) for _, run in pairs]
+        history = turns_from_public_records(
+            messages, datasource_id=question.db_id, runs=runs)
+        context = build_conversation_context(conversation_id=conversation_id,
+            datasource_id=question.db_id, question=question.question, history=history)
+        emit({'event': 'conversation_context_attached', 'budget': context['budget']})
+        prompt = clarification(question.question, context['turns'])
+        if prompt:
+            raise NeedsClarification(prompt)
+        text = question.question
+        if messages and not explicitly_starts_topic(text):
+            previous = messages[-1]
+            if runs[-1]['result']['needs_clarification']:
+                text = '原问题：' + previous['body'][:1000] + '\n用户补充：' + text
+        text = resolve_year_followup(text, context['turns'])
+        return replace(question, question=text), context['history_block']
 
     def _work(self, run_id, question, reference, manifest):
         path = self.output / run_id
         trace = JsonlTrace(path/'trace.jsonl')
         started = time.monotonic()
         writer = TraceEmitter(trace, run_id, question.question_id, started=started)
+        latest = {}
+        calls = []
         def emit(event):
             if event['event'] == 'call_started' and self.stop.is_set():
                 raise Stopped('Stopped before the next model call')
-            writer(event)
+            record = writer(event)
+            kind = event['event']
+            if kind in ('workflow_completed', 'semantic_review_completed', 'semantic_revision_guard'):
+                latest[kind] = record
+            if kind in ('call_started', 'call_completed', 'call_failed'):
+                calls.append({k: event.get(k) for k in ('event', 'usage_complete', 'input_tokens', 'output_tokens')})
             self._observe_stage(run_id, event)
         from sql_agent_lab.workspace.answer_checks import NeedsClarification
         result = {'status': 'failed', 'score': None, 'cloud_api_calls': 0}
@@ -658,6 +753,7 @@ class Observatory:
                       'model_call': False})
             else:
                 emit({'event': 'grounding_skipped', 'grounding_enabled': False, 'model_call': False})
+            history_block = ''
             if manifest.get('conversation_context_enabled'):
                 from sql_agent_lab.workspace.chat_intent import direct_answer
                 answer = direct_answer(question.question, lambda: self.refresh_profile(question.db_id),
@@ -665,12 +761,18 @@ class Observatory:
                 if answer:
                     result.update(status='completed', answer=answer)
                     return result
+                question, history_block = self._prepare_followup(
+                    manifest['conversation_id'], run_id, question, emit)
+            if self.stop.is_set():
+                raise Stopped('Stopped before preparing the model')
             db = self.databases[question.db_id]
-            before = sha256(db)
+            before = None
             # Preserve pinning for BIRD sources, including custom questions on them.
             if self.benchmark and question.db_id in self.benchmark.expected_hashes:
+                before = sha256(db)
                 self.benchmark.verify_database(question.db_id, before)
-            raw = SQLiteTools({question.db_id: db}, ToolLimits(timeout_seconds=30), metadata=self.metadata)
+            raw = SQLiteTools({question.db_id: db}, ToolLimits(timeout_seconds=30),
+                              metadata=self.metadata, cancelled=self.stop.is_set)
             observed = ObservedTools(raw, emit, self.stop)
             with httpx.Client(base_url='http://127.0.0.1:11434', trust_env=False,
                               follow_redirects=False, timeout=600) as client:
@@ -681,46 +783,21 @@ class Observatory:
                     value_lookup=manifest['schema_retrieval'], semantic_review=manifest.get('semantic_review', False))
                 agent = ReferenceMacSQLAgent({role: 'qwen3:4b-instruct' for role in ROLES}, config=config)
                 agent.grounding_block = manifest.get('grounding_block') or ''
-                context = {'turns': []}
-                if manifest.get('conversation_context_enabled'):
-                    from sql_agent_lab.workspace.conversation_context import (
-                        build_conversation_context, turns_from_public_records)
-                    detail = self.conversation_detail(manifest['conversation_id'])
-                    runs = [run for run in detail['runs'] if run['id'] != run_id]
-                    message_ids = {run['user_message_id'] for run in runs}
-                    messages = [message for message in detail['messages'] if message['id'] in message_ids]
-                    history = turns_from_public_records(
-                        messages, datasource_id=question.db_id, runs=runs)
-                    context = build_conversation_context(
-                        conversation_id=manifest['conversation_id'], datasource_id=question.db_id,
-                        question=question.question, history=history)
-                    agent.conversation_block = context['history_block']
-                    emit({'event': 'conversation_context_attached', 'budget': context['budget']})
-                from sql_agent_lab.workspace.answer_checks import clarification, NeedsClarification
-                if manifest.get('conversation_context_enabled'):
-                    previous = runs[-1] if runs else None
-                    if previous and not question.question.startswith(('新问题', '另问', '换个问题', '重新问', '不要沿用', 'new question', 'start over')) and '补充完整条件' in (previous.get('result', {}).get('summary') or ''):
-                        prior = next((m['body'] for m in messages if m['id'] == previous['user_message_id']), '')
-                        # Clarify the supplement itself before resuming, rather than accepting another vague request.
-                        prompt = clarification(question.question, context['turns'])
-                        if prompt:
-                            raise NeedsClarification(prompt)
-                        from dataclasses import replace
-                        question = replace(question, question='原问题：' + prior[:1000] + '\n用户补充：' + question.question)
-                    else:
-                        prompt = clarification(question.question, context['turns'])
-                        if prompt:
-                            raise NeedsClarification(prompt)
-                if manifest.get('conversation_context_enabled'):
-                    from sql_agent_lab.workspace.answer_checks import resolve_year_followup
-                    from dataclasses import replace
-                    question = replace(question, question=resolve_year_followup(question.question, context['turns']))
+                agent.conversation_block = history_block
                 agent_started = time.perf_counter()
-                sql = agent.run(question)
+                if hasattr(agent, 'run_with_feedback'):
+                    sql, feedback = agent.run_with_feedback(question)
+                else:
+                    # Older adapters return only SQL. Apply the same strict prepare check.
+                    sql = agent.run(question)
+                    if self.stop.is_set():
+                        raise Stopped('Stopped after the scheduled operation completed')
+                    feedback = raw.compile_sql_readonly(question.db_id, sql)
+                    if feedback['status'] == 'ok':
+                        feedback = raw.execute_sql_readonly(question.db_id, sql)
                 agent_latency_ms = round((time.perf_counter() - agent_started) * 1000, 1)
                 if self.stop.is_set():
                     raise Stopped('Stopped after the scheduled operation completed')
-                feedback = raw.execute_sql_readonly(question.db_id, sql)
                 result.update(sql=sql, feedback=feedback, status='completed' if feedback['status']=='ok' else 'failed')
                 if reference:
                     emit({'event': 'evaluation_started', 'note': 'Reference SQL is accessible only to the evaluator'})
@@ -730,7 +807,7 @@ class Observatory:
                                   evaluation_evidence_file='evaluation-evidence.json')
                     if evaluation['status']=='error': result['status']='evaluation_failed'
                     emit({'event':'evaluation_completed','score':evaluation['score'],'status':evaluation['status']})
-                result['database_unchanged'] = sha256(db) == before
+                result['database_unchanged'] = sha256(db) == before if before is not None else None
         except NeedsClarification as error:
             result.update(status='completed', clarification=str(error))
         except Stopped as error:
@@ -738,9 +815,8 @@ class Observatory:
         except Exception as error:
             result.update(status='failed', error_type=type(error).__name__, error=str(error))
         finally:
-            records = ([json.loads(line) for line in (path/'trace.jsonl').read_text(encoding='utf8').splitlines()]
-                       if (path/'trace.jsonl').exists() else [])
-            completed = next((e for e in reversed(records) if e['event']=='workflow_completed'), {})
+            completed = latest.get('workflow_completed', {})
+            result['tokens'] = token_totals(calls)
             result['semantic_status'] = completed.get('semantic_status', 'not_completed')
             result['semantic_metrics'] = completed.get('semantic_metrics', {})
             result['output_columns_report'] = completed.get('output_columns_report', {})
@@ -752,10 +828,8 @@ class Observatory:
             result['output_type_check'] = completed.get('output_type_check', {'status': 'unverified'})
             if result['status']=='completed' and result['output_type_check']['status']=='mismatch':
                 result['status']='needs_review'
-            result['semantic_report'] = next((e['report'] for e in reversed(records)
-                                              if e['event']=='semantic_review_completed'), None)
-            result['semantic_guard'] = next((e for e in reversed(records)
-                                             if e['event']=='semantic_revision_guard'), None)
+            result['semantic_report'] = latest.get('semantic_review_completed', {}).get('report')
+            result['semantic_guard'] = latest.get('semantic_revision_guard')
             result['elapsed_seconds'] = time.monotonic() - started
             grounding = dict(manifest.get('grounding') or {})
             grounding['enabled'] = bool(manifest.get('grounding_enabled'))
@@ -821,6 +895,8 @@ def _match_conversation(path):
 _CLIENT_LOCATIONS = frozenset({
     'path', 'paths', 'filename', 'file', 'directory', 'storage_key', 'uri', 'url',
 })
+# A supplementary Unicode character can occupy twelve bytes in escaped JSON.
+_KNOWLEDGE_REQUEST_BYTES = 300 * 1024
 
 
 def _use_grounding(payload):
@@ -915,6 +991,10 @@ def make_handler(app):
                     return self.send(app.catalog())
                 if url.path == '/api/runs':
                     return self.send(app.run_index())
+                if url.path == '/api/user/runs':
+                    return self.send(app.user_runs())
+                if url.path == '/api/user/run':
+                    return self.send(app.read_run(parse_qs(url.query).get('id', [''])[0], user=True))
                 if url.path == '/api/run':
                     return self.send(app.read_run(parse_qs(url.query).get('id', [''])[0]))
                 kind, conversation_id = _match_conversation(url.path)
@@ -939,17 +1019,24 @@ def make_handler(app):
                 self.send({'error': 'Not found'}, 404)
             except (ValueError, OSError) as error:
                 self.send({'error': str(error)}, 400)
+            except sqlite3.Error:
+                self.send({'error': '工作区存储暂不可用，请稍后重试。'}, 500)
 
-        def _json_body(self, limit):
+        def _local_request(self):
             host = self.headers.get('Host', '')
             expected = f'127.0.0.1:{self.server.server_port}'
+            if host == expected and self.headers.get('Origin', 'http://' + expected) == 'http://' + expected:
+                return True
+            self.send({'error': 'Local same-origin requests only'}, 403)
+            return False
+
+        def _json_body(self, limit):
+            if not self._local_request():
+                return None
             size = int(self.headers.get('Content-Length', '0'))
             if size < 0 or size > limit:
                 raise ValueError('Request too large')
             body = self.rfile.read(size)
-            if host != expected or self.headers.get('Origin', 'http://' + expected) != 'http://' + expected:
-                self.send({'error': 'Local same-origin requests only'}, 403)
-                return None
             payload = json.loads(body or b'{}')
             if not isinstance(payload, dict):
                 raise ValueError('Expected a JSON object')
@@ -960,11 +1047,17 @@ def make_handler(app):
             try:
                 path = urlparse(self.path).path
                 source = _match_source(path)
-                limit = 29 * 1024 * 1024 if path == '/api/sources/upload' else 48000 if source and source[1] == 'knowledge' else 20000
+                limit = 64 * 1024
+                if path == '/api/sources/upload':
+                    limit = 29 * 1024 * 1024
+                elif source and source[1] == 'knowledge':
+                    limit = _KNOWLEDGE_REQUEST_BYTES
                 payload = self._json_body(limit)
                 if payload is None:
                     return None
                 if path == '/api/sources/upload':
+                    if app.workspace_db is None:
+                        return self.send({'error': 'Not found'}, 404)
                     return self.send(app.upload_database(payload))
                 if source is not None and source[1] == 'knowledge':
                     if app.workspace_db is None:
@@ -988,13 +1081,15 @@ def make_handler(app):
                 self.send({'error': 'Not found'}, 404)
             except (ValueError, TypeError) as error:
                 self.send({'error': str(error)}, 400)
+            except sqlite3.Error:
+                self.send({'error': '工作区存储暂不可用，请稍后重试。'}, 500)
             except (OSError, RuntimeError) as error:
                 self.send({'error': str(error)}, 500)
 
         def do_PUT(self):
             try:
                 source = _match_source(urlparse(self.path).path)
-                payload = self._json_body(48000)
+                payload = self._json_body(_KNOWLEDGE_REQUEST_BYTES)
                 if payload is None:
                     return None
                 if source is None or source[1] != 'knowledge_item':
@@ -1004,20 +1099,20 @@ def make_handler(app):
                 self.send(app.update_source_knowledge(source[0], source[2], payload))
             except (ValueError, TypeError) as error:
                 self.send({'error': str(error)}, 400)
+            except sqlite3.Error:
+                self.send({'error': '工作区存储暂不可用，请稍后重试。'}, 500)
             except (OSError, RuntimeError) as error:
                 self.send({'error': str(error)}, 500)
 
         def do_DELETE(self):
             try:
-                host = self.headers.get('Host', '')
-                expected = f'127.0.0.1:{self.server.server_port}'
+                if not self._local_request():
+                    return
                 size = int(self.headers.get('Content-Length', '0'))
                 if size < 0 or size > 20000:
                     raise ValueError('Request too large')
                 if size:
                     self.rfile.read(size)
-                if host != expected or self.headers.get('Origin', 'http://' + expected) != 'http://' + expected:
-                    return self.send({'error': 'Local same-origin requests only'}, 403)
                 source = _match_source(urlparse(self.path).path)
                 if source is None or source[1] != 'knowledge_item':
                     return self.send({'error': 'Not found'}, 404)
@@ -1026,6 +1121,8 @@ def make_handler(app):
                 self.send(app.delete_source_knowledge(source[0], source[2]))
             except (ValueError, TypeError) as error:
                 self.send({'error': str(error)}, 400)
+            except sqlite3.Error:
+                self.send({'error': '工作区存储暂不可用，请稍后重试。'}, 500)
             except (OSError, RuntimeError) as error:
                 self.send({'error': str(error)}, 500)
     return Handler
@@ -1052,7 +1149,8 @@ def main():
     app = Observatory(args.data_dir, args.output_dir, args.metadata, args.history, args.analysis_dir,
                       args.recorded_batch, sources=args.sources, workspace_db=args.workspace_db)
     server = ThreadingHTTPServer(('127.0.0.1', args.port), make_handler(app))
-    print(f'AgentOpt Observatory: http://127.0.0.1:{server.server_port}', flush=True)
+    landing = '/workspace/' if args.workspace_db else '/'
+    print(f'SQL Agent Lab http://127.0.0.1:{server.server_port}{landing}', flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

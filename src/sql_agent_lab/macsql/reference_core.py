@@ -195,6 +195,11 @@ class ReferenceGraphAgent:
         return report
 
     def run(self, input_data: Question):
+        sql, _ = self.run_with_feedback(input_data)
+        return sql
+
+    def run_with_feedback(self, input_data: Question):
+        """Return the selected SQL and feedback from that same graph execution."""
         if not isinstance(input_data, Question):
             raise TypeError("run() accepts Question, which deliberately has no gold SQL field")
         state = {"question": input_data, "run_id": uuid4().hex, "repair_count": 0,
@@ -233,4 +238,4 @@ class ReferenceGraphAgent:
                     output_projection_suggestion=result.get('output_projection_suggestion', {}),
                     semantic_suggestion=result.get('semantic_suggestion', {}),
                     output_type_check=result.get('output_type_report', {'status': 'unverified'}))
-        return result["sql"]
+        return result["sql"], result["feedback"]

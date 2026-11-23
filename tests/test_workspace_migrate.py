@@ -2,6 +2,7 @@
 from contextlib import closing
 from dataclasses import replace
 import inspect
+from pathlib import Path
 import sqlite3
 import uuid
 
@@ -131,6 +132,6 @@ def test_conversations_survive_restart_and_bind_one_data_source(tmp_path):
 
 def test_workspace_database_is_opt_in():
     assert inspect.signature(live_ui.Observatory.__init__).parameters['workspace_db'].default is None
-    source = inspect.getsource(live_ui.argument_parser)
-    assert '--workspace-db' in source
-    assert 'default=None' in source
+    parser = live_ui.argument_parser()
+    assert parser.parse_args(['--output-dir', 'runs']).workspace_db is None
+    assert parser.parse_args(['--output-dir', 'runs', '--workspace-db', 'test.db']).workspace_db == Path('test.db')

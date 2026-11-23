@@ -51,8 +51,14 @@ def main():
     parser.add_argument('--standalone', action='store_true', help='Two SQLite sources without any BIRD files')
     parser.add_argument('--showcase', action='store_true', help='Use synthetic shop data and fixed SQL (requires --standalone)')
     parser.add_argument('--workspace', action='store_true', help='Enable the workspace with synthetic sources')
+    parser.add_argument('--empty-workspace', action='store_true',
+                        help='Start with no sources so the first upload can be tested')
     parser.add_argument('--answer-cases', action='store_true', help='Save scalar/zero/empty/null/error examples without models')
     args = parser.parse_args()
+    if args.empty_workspace:
+        if args.showcase or args.answer_cases:
+            parser.error('--empty-workspace cannot seed examples')
+        args.standalone = args.workspace = True
     if args.showcase and not args.standalone:
         parser.error('--showcase requires --standalone')
     if args.answer_cases and not args.standalone:
@@ -92,7 +98,8 @@ def main():
         sources = root / 'sources.json'
         if not sources.exists():
             entries = []
-            for source_id, value in [('first', 42), ('second', 99)]:
+            seeds = [] if args.empty_workspace else [('first', 42), ('second', 99)]
+            for source_id, value in seeds:
                 db = root / (source_id + '.sqlite')
                 conn = sqlite3.connect(db)
                 try:

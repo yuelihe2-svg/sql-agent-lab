@@ -5,11 +5,12 @@ schema match and ranks user knowledge with FTS5 BM25. `hybrid` adds declared
 foreign keys that touch one matched table, still without adding the two scores
 together. An embedding strategy can be registered later; none is loaded here.
 """
+from collections import OrderedDict
+from copy import deepcopy
 import re
+from threading import Lock
 
-from sql_agent_lab.workspace.knowledge_index import (
-    FTS5Unavailable, KnowledgeIndexError, MemoryKnowledgeIndex,
-)
+from sql_agent_lab.workspace.knowledge_index import MemoryKnowledgeIndex
 
 
 QUESTION_LIMIT = 1000
@@ -26,7 +27,9 @@ _WEAK = frozenset({
 _INSTRUCTION = re.compile(
     r'ignore\s+(all\s+)?previous|system\s+prompt|drop\s+table|you\s+are\s+now',
     re.IGNORECASE)
-_CACHE = {}
+_CACHE_LIMIT = 128
+_CACHE = OrderedDict()
+_CACHE_LOCK = Lock()
 STRATEGIES = ('keyword', 'bm25', 'hybrid')
 _EXTRA_KNOWLEDGE_STRATEGIES = {}
 
@@ -56,10 +59,16 @@ def ground(datasource_id, profile, documents, question, cache=None, strategy='ke
     strategy = _resolve_strategy(strategy)
     key = (datasource_id, profile['fingerprint'], _knowledge_key(documents, datasource_id),
            ' '.join(question.lower().split()), strategy)
-    store = _CACHE if cache is None else cache
-    cached = store.get(key)
+    if cache is None:
+        with _CACHE_LOCK:
+            cached = _CACHE.get(key)
+            if cached is not None:
+                _CACHE.move_to_end(key)
+    else:
+        cached = cache.get(key)
     if cached is not None:
-        result = dict(cached)
+        result = deepcopy(cached)
+        result['question'] = question.strip()
         result['cache'] = 'hit'
         return result
     tokens = _tokens(question)
@@ -95,7 +104,14 @@ def ground(datasource_id, profile, documents, question, cache=None, strategy='ke
             'excerpt_chars': EXCERPT_CHARS,
         },
     }
-    store[key] = result
+    if cache is None:
+        with _CACHE_LOCK:
+            _CACHE[key] = deepcopy(result)
+            _CACHE.move_to_end(key)
+            if len(_CACHE) > _CACHE_LIMIT:
+                _CACHE.popitem(last=False)
+    else:
+        cache[key] = deepcopy(result)
     return result
 
 
@@ -194,16 +210,12 @@ def _knowledge(documents, tokens, datasource_id, identifiers=()):
             continue
         title = document.get('title') if isinstance(document.get('title'), str) else ''
         body = document.get('body') if isinstance(document.get('body'), str) else ''
-        overlap = sorted(
-            token for token in tokens
-            if token not in _WEAK and len(token) >= 3 and token in _tokens(title + '\n' + body))
+        doc_tokens = _tokens(title + '\n' + body)
+        overlap = sorted(token for token in tokens & doc_tokens if token not in _WEAK and len(token) >= 3)
         distinctive = [token for token in overlap if token not in identifiers]
         if not distinctive:
             continue
-        excerpt = body.strip()
-        truncated = len(excerpt) > EXCERPT_CHARS
-        if truncated:
-            excerpt = excerpt[:EXCERPT_CHARS]
+        excerpt, truncated = matching_excerpt(body, distinctive)
         ranked.append({
             'id': document.get('id'),
             'version': document.get('version'),
@@ -221,6 +233,16 @@ def _knowledge(documents, tokens, datasource_id, identifiers=()):
         })
     ranked.sort(key=lambda item: (-item['score'], str(item['id'])))
     return ranked[:MAX_KNOWLEDGE]
+
+
+def matching_excerpt(body, terms, *, limit=EXCERPT_CHARS):
+    text = body.strip()
+    if len(text) <= limit:
+        return text, False
+    lowered = text.lower()
+    hits = [pos for token in terms if (pos := lowered.find(token.lower())) >= 0]
+    start = min(max(0, min(hits, default=0) - 60), len(text) - limit)
+    return text[start:start + limit], True
 
 
 def _identifier_tokens(profile):
@@ -275,8 +297,8 @@ def _tokens(text):
             found.add(word.replace('_', ''))
             found.update(part for part in word.split('_') if part)
         if re.fullmatch(r'[\u4e00-\u9fff]+', word):
-            for index in range(len(word) - 1):
-                found.add(word[index:index + 2])
+            for size in (2, 3):
+                found.update(word[i:i + size] for i in range(len(word) - size + 1))
     return found
 
 
@@ -286,13 +308,12 @@ def _knowledge_channel(strategy, documents, tokens, datasource_id, profile, ques
     if strategy in _EXTRA_KNOWLEDGE_STRATEGIES:
         hits = _EXTRA_KNOWLEDGE_STRATEGIES[strategy](documents, datasource_id, question, MAX_KNOWLEDGE)
         return list(hits)[:MAX_KNOWLEDGE], 'extension'
+    index = knowledge_index or MemoryKnowledgeIndex(documents)
     try:
-        index = knowledge_index or MemoryKnowledgeIndex(documents)
         hits = index.search(datasource_id, question, MAX_KNOWLEDGE)
-    except FTS5Unavailable:
-        raise
-    except KnowledgeIndexError:
-        raise
+    finally:
+        if knowledge_index is None:
+            index.close()
     by_id = {}
     for document in documents or []:
         if isinstance(document, dict) and document.get('datasource_id') == datasource_id:
@@ -308,10 +329,7 @@ def _knowledge_channel(strategy, documents, tokens, datasource_id, profile, ques
             continue
         title = document.get('title') if isinstance(document.get('title'), str) else ''
         body = document.get('body') if isinstance(document.get('body'), str) else ''
-        excerpt = body.strip()
-        truncated = len(excerpt) > EXCERPT_CHARS
-        if truncated:
-            excerpt = excerpt[:EXCERPT_CHARS]
+        excerpt, truncated = matching_excerpt(body, fts_tokens(question))
         ranked.append({
             'id': document.get('id'),
             'version': document.get('version'),

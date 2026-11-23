@@ -66,3 +66,55 @@ def test_history_is_counted_by_final_policy(tmp_path):
     with pytest.raises(ContextBudgetExceeded):
         agent._fit('decomposer', lambda schema: 'Current question', {})
     assert _messages('prompt') == _messages('prompt', '', '')
+
+
+@pytest.mark.parametrize('question', ['那杭州呢？', '改成2023年呢？', '统计订单'])
+def test_clarification_works_without_ollama(tmp_path, monkeypatch, question):
+    app = build(tmp_path, monkeypatch)
+    attempted = []
+
+    def offline(*args, **kwargs):
+        attempted.append(True)
+        raise RuntimeError('Ollama unavailable')
+
+    monkeypatch.setattr('sql_agent_lab.macsql.live_ui.LocalOllamaModel', offline)
+    cid = app.create_conversation({'datasource_id': 'shop'})['id']
+    app.post_conversation_message(cid, {'question': question})
+    wait_done(app)
+    result = app.conversation_detail(cid)['runs'][0]['result']
+    assert '补充完整条件' in result['summary']
+    assert result['sql'] is None
+    assert not attempted
+
+
+def test_web_uses_the_actual_graph_result_without_reexecuting_sql(tmp_path, monkeypatch):
+    from dataclasses import replace
+    from sql_agent_lab.macsql import live_ui
+    from sql_agent_lab.macsql.tools import SQLiteTools
+    app = build(tmp_path, monkeypatch)
+    calls = []
+    execute = SQLiteTools.execute_sql_readonly
+    def counted(self, db_id, sql):
+        calls.append(sql)
+        return execute(self, db_id, sql)
+
+    def model(**kwargs):
+        return ModelReply('```sql\nSELECT n FROM numbers\n```', 12, 7, simulated=True)
+
+    def no_file_scan(*args):
+        pytest.fail('A standalone query must not scan the database file')
+
+    monkeypatch.setattr(live_ui, 'sha256', no_file_scan)
+    monkeypatch.setattr(SQLiteTools, 'execute_sql_readonly', counted)
+    monkeypatch.setattr(live_ui, 'ReferenceMacSQLAgent', lambda models, config:
+                        ReferenceMacSQLAgent(models, config=replace(config, model=model)))
+    cid = app.create_conversation({'datasource_id': 'shop'})['id']
+    app.post_conversation_message(cid, {'question': 'What number is stored?'})
+    wait_done(app)
+    run = app.conversation_detail(cid)['runs'][0]
+    assert calls == ['SELECT n FROM numbers']
+    assert run['result']['rows'] == [[42]]
+    assert run['result']['tokens'] == {'input': 12, 'output': 7}
+    # A completed chat can display its usage without historical trace access.
+    (app.output / run['id'] / 'trace.jsonl').unlink()
+    assert app.conversation_detail(cid)['runs'][0]['result'] == run['result']

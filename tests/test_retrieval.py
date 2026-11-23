@@ -114,6 +114,32 @@ def test_schema_fingerprint_change_misses_the_cache():
     assert any(column['name'] == 'priority' for table in after['tables'] for column in table['columns'])
 
 
+def test_unsegmented_chinese_terms_retrieve_the_relevant_passage():
+    body = '说明。' * 160 + '活跃订单仅包含已支付订单。'
+    docs = [{'datasource_id': 'shop', 'id': 'active', 'version': 1, 'content_hash': 'v1',
+             'title': '定义', 'body': body},
+            {'datasource_id': 'shop', 'id': 'other', 'title': '退货定义', 'body': '仅包含已退货的订单。'}]
+    result = ground('shop', _profile(), docs, '有多少活跃订单', cache={})
+    assert [item['id'] for item in result['knowledge']] == ['active']
+    assert '仅包含已支付订单' in result['knowledge'][0]['excerpt']
+    assert result['knowledge'][0]['excerpt_truncated']
+
+
+def test_default_cache_is_bounded_and_results_are_independent(monkeypatch):
+    from collections import OrderedDict
+    from sql_agent_lab.workspace import retrieval
+    monkeypatch.setattr(retrieval, '_CACHE', OrderedDict())
+    monkeypatch.setattr(retrieval, '_CACHE_LIMIT', 2)
+    profile = _profile()
+    first = ground('shop', profile, [], 'order status')
+    first['tables'].clear()
+    second = ground('shop', profile, [], 'ORDER STATUS')
+    assert second['cache'] == 'hit' and second['tables'] and second['question'] == 'ORDER STATUS'
+    for question in ('customer name', 'order id', 'order status'):
+        assert ground('shop', profile, [], question)['cache'] == 'miss'
+    assert len(retrieval._CACHE) == 2
+
+
 def test_saved_profile_grounding_does_not_copy_rows(tmp_path):
     database = _shop(tmp_path / 'SECRET_DB_PATH' / 'business.sqlite')
     before = database.read_bytes()

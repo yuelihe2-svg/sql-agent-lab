@@ -195,13 +195,16 @@ def test_stop_failure_and_workspace_write_error(tmp_path, monkeypatch):
             raise sqlite3.OperationalError('workspace write failed')
 
         monkeypatch.setattr(workspace_db.WorkspaceStore, 'attach_run', unwritable)
-        app.behavior = lambda config, question: 'SELECT n FROM numbers'
+        def unexpected_worker(*args):
+            pytest.fail('An unrecorded conversation message must never launch a worker')
+        monkeypatch.setattr(app, 'work', unexpected_worker)
         app.worker_done.clear()
         rejected = client.post(f"/api/conversations/{created['id']}/messages",
                                json={'question': 'This write should fail'})
         assert rejected.status_code == 500
         assert rejected.json()['error'] == 'workspace write failed'
-        wait_done(app)
+        assert app.active is None
+        assert not app.worker_done.is_set()
         detail = client.get(f"/api/conversations/{created['id']}").json()
         assert [item['body'] for item in detail['messages']] == [
             'Stop this question', 'This question fails']

@@ -4,8 +4,11 @@ from pathlib import Path
 import hashlib
 import json
 import sqlite3
+import string
 
-from sql_agent_lab.macsql.tools import quote_identifier
+from sql_agent_lab.macsql.tools import quote_identifier, user_tables, visible_columns
+
+_SQLITE_CASE = str.maketrans(string.ascii_uppercase, string.ascii_lowercase)
 
 
 def extract_profile(database):
@@ -14,23 +17,41 @@ def extract_profile(database):
     The returned object has no filesystem path. Declared keys are recorded.
     Missing keys stay empty. No business definition is inferred.
     """
+    return read_profile_if_changed(database)[1]
+
+
+def read_profile_if_changed(database, previous=None):
+    """Check the SQLite schema cookie in the same read transaction as the catalog."""
     path = Path(database)
     uri = path.resolve().as_uri() + '?mode=ro'
     try:
+        stat = path.stat()
         with closing(sqlite3.connect(uri, uri=True)) as conn:
             conn.execute('PRAGMA query_only=ON')
-            names = [row[0] for row in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'table' "
-                "AND name NOT LIKE 'sqlite_%' ORDER BY name")]
-            tables = [_table(conn, name) for name in names]
-    except sqlite3.Error as error:
+            conn.execute('BEGIN')
+            version = conn.execute('PRAGMA schema_version').fetchone()[0]
+            stamp = (stat.st_dev, stat.st_ino, stat.st_mtime_ns, stat.st_size, version)
+            if stamp == previous:
+                return stamp, None
+            tables = [_table(conn, name) for name in user_tables(conn)]
+    except (OSError, sqlite3.Error) as error:
         raise ValueError('Data source schema could not be read') from error
     relationships = [
         item for table in tables for item in table['foreign_keys']]
+    # REFERENCES parent with no column list refers to the declared primary key in order.
+    parents = {t['name'].translate(_SQLITE_CASE): t for t in tables}
+    for fk in relationships:
+        parent = parents.get(fk['to_table'].translate(_SQLITE_CASE))
+        if parent:
+            fk['to_table'] = parent['name']
+        if parent and all(col is None for col in fk['to_columns']):
+            parent_key = parent['primary_key']
+            if len(parent_key) == len(fk['from_columns']):
+                fk['to_columns'] = list(parent_key)
     canonical = {'tables': [_fingerprint_table(table) for table in tables],
                  'relationships': relationships}
     missing_keys = [table['name'] for table in tables if not table['primary_key']]
-    return {
+    return stamp, {
         'kind': 'sqlite',
         'tables': tables,
         'relationships': relationships,
@@ -64,7 +85,7 @@ def public_profile(source, extracted):
 
 
 def _table(conn, name):
-    info = conn.execute(f'PRAGMA table_info({quote_identifier(name)})').fetchall()
+    info = visible_columns(conn, name)
     foreign_keys = conn.execute(f'PRAGMA foreign_key_list({quote_identifier(name)})').fetchall()
     primary_key = [row[1] for row in sorted(info, key=lambda item: item[5]) if row[5]]
     grouped = {}

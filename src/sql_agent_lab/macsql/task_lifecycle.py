@@ -18,8 +18,11 @@ def utc_now():
 def write_json_atomic(path, value):
     """Readers see either the previous JSON or the complete replacement."""
     temporary = path.with_suffix('.tmp')
-    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf8')
-    temporary.replace(path)
+    try:
+        temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf8')
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def new_task():
