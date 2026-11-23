@@ -17,7 +17,10 @@ def _rows(path):
 
 
 def test_materialized_cases_hide_gold_sql(tmp_path):
-    materialize()
+    materialize(tmp_path)
+    for path in tmp_path.rglob('*.jsonl'):
+        tracked = ROOT / "evals" / path.relative_to(tmp_path)
+        assert _rows(path) == _rows(tracked), path.name
     rules = (ROOT / "evals" / "shopbench_v1" / "business_rules.md").read_text(encoding="utf-8")
     case_text = "\n".join((ROOT / "evals" / "cases").joinpath(name).read_text(encoding="utf-8")
                           for name in ("single_turn.jsonl", "multi_turn.jsonl"))
@@ -38,7 +41,6 @@ def test_materialized_cases_hide_gold_sql(tmp_path):
 def test_every_gold_sql_executes(shopbench):
     directory, _manifest = shopbench
     tools = SQLiteTools({name: directory / f"{name}.sqlite" for name in ("shop_a", "shop_b", "shop_edge")})
-    materialize()
     failures = []
     for row in _rows(ROOT / "evals" / "gold" / "single_turn_gold.jsonl"):
         result = fetch_rows(tools, row["source_id"], row["sql"])
@@ -58,7 +60,6 @@ def test_money_gold_matches_independent_cash_calculation(shopbench):
     directory, _manifest = shopbench
     conn = sqlite3.connect(directory / "shop_a.sqlite")
     tools = SQLiteTools({"shop_a": directory / "shop_a.sqlite"})
-    materialize()
     gold = {row["case_id"]: row for row in _rows(ROOT / "evals" / "gold" / "single_turn_gold.jsonl")}
 
     def scalar(case_id):
