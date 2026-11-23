@@ -1,14 +1,14 @@
 """Application task state, independent of SQL checks and answer scores.
 
-The web service owns one worker at a time. Reading an abandoned task is a
-read-only recovery view: it never resumes work or rewrites historical records.
+The web service runs one task at a time. Saved running tasks can be read
+as interrupted, while the scheduler can restore tasks that never started.
 """
 from datetime import datetime, timezone
 import json
 
 
-LIVE_STATES = {'running', 'stopping'}
-TERMINAL_STATES = {'completed', 'failed', 'stopped'}
+LIVE_STATES = {'queued', 'running', 'stopping'}
+TERMINAL_STATES = {'completed', 'failed', 'stopped', 'interrupted'}
 
 
 def utc_now():
@@ -25,9 +25,10 @@ def write_json_atomic(path, value):
         temporary.unlink(missing_ok=True)
 
 
-def new_task():
+def new_task(*, queued=False):
     now = utc_now()
-    return {'state': 'running', 'stage': 'preparing', 'started_at': now,
+    return {'state': 'queued' if queued else 'running',
+            'stage': 'queued' if queued else 'preparing', 'started_at': None if queued else now,
             'updated_at': now, 'ended_at': None, 'stop_requested_at': None,
             'error': None, 'source': 'task'}
 
@@ -35,7 +36,8 @@ def new_task():
 def change_task(task, *, state=None, stage=None, error=None):
     """Validate transitions; callers serialize read/change/write with a lock."""
     target = state or task['state']
-    allowed = {'running': {'running', 'stopping', *TERMINAL_STATES},
+    allowed = {'queued': {'running', 'failed', 'stopped', 'interrupted'},
+               'running': {'running', 'stopping', *TERMINAL_STATES},
                'stopping': {'stopping', *TERMINAL_STATES}}
     if target not in allowed.get(task['state'], {task['state']}):
         raise ValueError(f"Invalid task transition: {task['state']} -> {target}")
@@ -43,6 +45,8 @@ def change_task(task, *, state=None, stage=None, error=None):
         return dict(task)
     now = utc_now()
     updated = {**task, 'state': target, 'updated_at': now}
+    if task['state'] == 'queued' and target == 'running':
+        updated.update(started_at=now, stage='preparing')
     if stage is not None:
         updated['stage'] = stage
     if target == 'stopping' and not task['stop_requested_at']:
@@ -59,7 +63,7 @@ def result_task_state(result):
             'stopped': 'stopped'}.get((result or {}).get('status'), 'unknown')
 
 
-def task_view(path, result, *, active=False, stop_requested=False, managed=False, current=None):
+def task_view(path, result, *, active=False, waiting=False, stop_requested=False, managed=False, current=None):
     """Project saved state for the API without writing anything on GET.
 
     Only new, locally managed tasks can be classified as interrupted. Missing
@@ -73,7 +77,7 @@ def task_view(path, result, *, active=False, stop_requested=False, managed=False
                 'stage': None, 'started_at': None, 'updated_at': None,
                 'ended_at': None, 'stop_requested_at': None,
                 'error': (result or {}).get('error'), 'source': 'legacy'}
-    if not active and task['state'] in LIVE_STATES:
+    if not active and not (waiting and task['state'] == 'queued') and task['state'] in LIVE_STATES:
         final = result_task_state(result)
         if final != 'unknown':
             # A crash can happen after result.json is saved but before task.json.

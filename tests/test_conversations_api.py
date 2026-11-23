@@ -165,14 +165,16 @@ def test_stop_failure_and_workspace_write_error(tmp_path, monkeypatch):
                               json={'question': 'Stop this question'})
         assert started.status_code == 200
         assert entered.wait(5)
-        assert client.post(f"/api/conversations/{created['id']}/messages",
-                           json={'question': 'Second while active'}).status_code == 400
+        queued = client.post(f"/api/conversations/{created['id']}/messages",
+                             json={'question': 'Second while active'})
+        assert queued.status_code == 200
+        assert client.post('/api/stop', json={'id': queued.json()['id']}).json()['status'] == 'cancelled'
         assert client.post('/api/stop', json={'id': started.json()['id']}).json()['status'] == 'stop_requested'
         release.set()
         wait_done(app)
         detail = client.get(f"/api/conversations/{created['id']}").json()
         assert detail['runs'][0]['state'] == 'stopped'
-        assert [item['body'] for item in detail['messages']] == ['Stop this question']
+        assert [item['body'] for item in detail['messages']] == ['Stop this question', 'Second while active']
 
         def fail(config, question):
             raise RuntimeError('offline injected failure')
@@ -184,10 +186,10 @@ def test_stop_failure_and_workspace_write_error(tmp_path, monkeypatch):
         assert failed.status_code == 200
         wait_done(app)
         detail = client.get(f"/api/conversations/{created['id']}").json()
-        assert detail['runs'][1]['state'] == 'failed'
-        assert detail['runs'][1]['error'] == 'offline injected failure'
+        assert detail['runs'][-1]['state'] == 'failed'
+        assert detail['runs'][-1]['error'] == 'offline injected failure'
         assert [item['body'] for item in detail['messages']] == [
-            'Stop this question', 'This question fails']
+            'Stop this question', 'Second while active', 'This question fails']
 
         import sql_agent_lab.workspace.database as workspace_db
 
@@ -207,5 +209,5 @@ def test_stop_failure_and_workspace_write_error(tmp_path, monkeypatch):
         assert not app.worker_done.is_set()
         detail = client.get(f"/api/conversations/{created['id']}").json()
         assert [item['body'] for item in detail['messages']] == [
-            'Stop this question', 'This question fails']
+            'Stop this question', 'Second while active', 'This question fails']
     assert all(path.read_bytes() == content for path, content in app.business_before.items())

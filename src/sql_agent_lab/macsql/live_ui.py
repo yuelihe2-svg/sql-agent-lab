@@ -1,4 +1,4 @@
-"""Local SQLite observatory with optional BIRD evaluation; startup invokes no models."""
+"""Local SQLite observatory with optional BIRD evaluation; with a durable local queue."""
 import argparse
 from contextlib import ExitStack
 from copy import deepcopy
@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import inspect
 import json
+import logging
+import math
 from pathlib import Path
 import sqlite3
 import threading
@@ -34,6 +36,27 @@ from .task_lifecycle import (change_task, event_stage, new_task, result_task_sta
 
 class Stopped(RuntimeError):
     pass
+
+
+class RunStop(threading.Event):
+    """Cooperative cancellation plus a monotonic execution deadline."""
+
+    def __init__(self):
+        super().__init__()
+        self.deadline = None
+
+    def expired(self):
+        return self.deadline is not None and time.monotonic() >= self.deadline
+
+    def is_set(self):
+        return super().is_set() or self.expired()
+
+    def limit_request(self, request):
+        if self.is_set():
+            raise Stopped('Task stopped before the next model request')
+        remaining = self.deadline - time.monotonic()
+        request.extensions['timeout'] = httpx.Timeout(max(0.001, remaining),
+                                                       connect=min(5, max(0.001, remaining))).as_dict()
 
 
 class ObservedTools:
@@ -75,7 +98,7 @@ class ObservedTools:
 
 class Observatory:
     def __init__(self, data, output, metadata=None, history=None, analysis_dir=None, recorded_batches=None,
-                 *, sources=None, workspace_db=None):
+                 *, sources=None, workspace_db=None, queue_limit=8, run_timeout=600):
         self.data = Path(data).resolve() if data else None
         self.output = Path(output).resolve()
         checkout = Path(__file__).resolve().parents[3]
@@ -105,12 +128,77 @@ class Observatory:
         self.history = Path(history).resolve() if history else None
         self.analysis_dir = Path(analysis_dir).resolve() if analysis_dir else None
         self.recorded_batches = [Path(p).resolve(strict=True) for p in recorded_batches or []]
-        self.lock, self.stop = threading.Lock(), threading.Event()
+        if type(queue_limit) is not int or queue_limit < 1:
+            raise ValueError('Queue capacity must be a positive integer')
+        if not math.isfinite(run_timeout) or run_timeout <= 0:
+            raise ValueError('Run timeout must be positive and finite')
+        self.lock, self.stop = threading.Lock(), RunStop()
+        self.queue_limit, self.run_timeout = queue_limit, run_timeout
+        self.pending = {}
+        self.shutting_down = False
         self.active = None
         self.tasks = {}  # Current-process snapshots, also available if saving fails.
         self._run_conversation = {}
         self._profiles = {}
         self._profile_lock = threading.Lock()
+        self._load_pending()
+
+    def _load_pending(self):
+        recovered = []
+        for path in self.output.glob('*/task.json'):
+            try:
+                task = json.loads(path.read_text(encoding='utf8'))
+                if task.get('state') != 'queued':
+                    continue
+                manifest = json.loads(path.with_name('manifest.json').read_text(encoding='utf8'))
+                question = Question(**manifest['question'])
+                if (manifest.get('mode') != 'local_inference' or manifest.get('benchmark')
+                        or question.db_id not in self.databases):
+                    continue
+                if path.with_name('result.json').exists():
+                    continue
+                recovered.append((manifest['created_at'], path.parent.name, task, question, manifest))
+            except (OSError, ValueError, TypeError, KeyError, AttributeError):
+                logging.getLogger(__name__).warning('Could not read a saved queue entry')
+        for _, run_id, task, question, manifest in sorted(recovered):
+            self.tasks[run_id] = task
+            self.pending[run_id] = (question, None, manifest)
+            if manifest.get('conversation_id'):
+                self._run_conversation[run_id] = manifest['conversation_id']
+
+    def resume_pending(self):
+        """Called after the server binds its port."""
+        with self.lock:
+            self._dispatch_pending()
+
+    def shutdown(self):
+        with self.lock:
+            self.shutting_down = True
+            self.stop.set()
+
+    def _dispatch_pending(self, *, propagate_for=None):
+        """Start the next task while holding the scheduler lock."""
+        while not self.shutting_down and self.active is None and self.pending:
+            run_id = next(iter(self.pending))
+            question, reference, manifest = self.pending.pop(run_id)
+            try:
+                self.active = run_id
+                self._save_task(run_id, change_task(self.tasks[run_id], state='running'))
+                if run_id in self._run_conversation and self.tasks[run_id].get('persistence_error'):
+                    raise RuntimeError(self.tasks[run_id]['persistence_error'])
+                self.stop.clear()
+                self.stop.deadline = time.monotonic() + self.run_timeout
+                threading.Thread(target=self.work, args=(run_id, question, reference, manifest), daemon=True).start()
+            except Exception as error:
+                self.active = None
+                self.stop.deadline = None
+                self._run_conversation.pop(run_id, None)
+                try:
+                    self._save_task(run_id, change_task(self.tasks[run_id], state='failed', error=str(error)))
+                except OSError:
+                    pass
+                if run_id == propagate_for:
+                    raise
 
     def upload_database(self, payload):
         import base64
@@ -208,6 +296,7 @@ class Observatory:
 
     def _task_view(self, run_id, path, result):
         return task_view(path, result, active=self.active == run_id,
+                         waiting=run_id in getattr(self, 'pending', {}),
                          stop_requested=self.active == run_id and self.stop.is_set(),
                          managed=path.resolve().parent == self.output.resolve(),
                          current=getattr(self, 'tasks', {}).get(run_id))
@@ -217,6 +306,17 @@ class Observatory:
         if not isinstance(run_id, str) or not run_id:
             raise ValueError('A run ID is required to stop a task')
         with self.lock:
+            if run_id in self.pending:
+                # Publish the terminal state before removing the durable queue entry.
+                old_task = self.tasks[run_id]
+                try:
+                    self._save_task(run_id, change_task(old_task, state='stopped'))
+                except OSError:
+                    self.tasks[run_id] = old_task
+                    raise
+                self.pending.pop(run_id)
+                self._run_conversation.pop(run_id, None)
+                return {'id': run_id, 'status': 'cancelled'}
             if run_id != self.active:
                 return {'id': run_id, 'status': 'not_active'}
             task = self.tasks[run_id]
@@ -633,12 +733,20 @@ class Observatory:
         if use_history and conversation_id is None:
             raise ValueError('Conversation context requires a conversation')
         with self.lock:
-            if self.active:
+            if self.shutting_down:
+                raise ValueError('服务正在关闭，请重启后再提交。')
+            if reference is not None and (self.active or self.pending):
                 raise ValueError('A run is already active')
+            if len(self.pending) >= self.queue_limit:
+                raise ValueError('等待队列已满，请等一个任务结束后重试。')
         prepared = self._prepare_grounding(question, payload)
         with self.lock:
-            if self.active:
+            if self.shutting_down:
+                raise ValueError('服务正在关闭，请重启后再提交。')
+            if reference is not None and (self.active or self.pending):
                 raise ValueError('A run is already active')
+            if len(self.pending) >= self.queue_limit:
+                raise ValueError('等待队列已满，请等一个任务结束后重试。')
             run_id = datetime.now().strftime('%Y%m%d-%H%M%S-') + uuid4().hex[:6]
             path = self.output / run_id
             path.mkdir()
@@ -653,32 +761,29 @@ class Observatory:
                         'cloud_api_calls': 0,
                         'grounding_enabled': prepared['grounding_enabled'],
                         'grounding': prepared['grounding']}
+            if conversation_id is not None:
+                manifest['conversation_id'] = str(conversation_id)
             if use_history:
                 manifest['conversation_context_enabled'] = True
-                manifest['conversation_id'] = str(conversation_id)
             if prepared['grounding_block']:
                 manifest['grounding_block'] = prepared['grounding_block']
             write_json_atomic(path/'manifest.json', manifest)
             if conversation_id is not None:
                 self._run_conversation[run_id] = str(conversation_id)
-            attached = False
             try:
-                self._save_task(run_id, new_task())
+                self._save_task(run_id, new_task(queued=True))
                 failure = self.tasks[run_id].get('persistence_error')
                 if conversation_id is not None and failure:
                     raise RuntimeError(failure)
-                attached = True
-                self.active = run_id
-                self.stop.clear()
-                threading.Thread(target=self.work, args=(run_id, question, reference, manifest), daemon=True).start()
             except Exception as error:
                 try:
                     self._save_task(run_id, change_task(self.tasks[run_id], state='failed', error=str(error)),
-                                    project=attached or conversation_id is None)
+                                    project=conversation_id is None)
                 finally:
                     self._run_conversation.pop(run_id, None)
-                    self.active = None
                 raise
+            self.pending[run_id] = (question, reference, manifest)
+            self._dispatch_pending(propagate_for=run_id)
         return run_id
 
     def work(self, run_id, question, reference, manifest):
@@ -701,6 +806,8 @@ class Observatory:
                 finally:
                     self._run_conversation.pop(run_id, None)
                     self.active = None
+                    self.stop.deadline = None
+                    self._dispatch_pending()
 
     def _prepare_followup(self, conversation_id, run_id, question, emit):
         from sql_agent_lab.workspace.answer_checks import (
@@ -815,7 +922,8 @@ class Observatory:
             if self.benchmark and question.db_id in self.benchmark.expected_hashes:
                 before = sha256(db)
                 self.benchmark.verify_database(question.db_id, before)
-            raw = SQLiteTools({question.db_id: db}, ToolLimits(timeout_seconds=30),
+            remaining = max(0.001, self.stop.deadline - time.monotonic())
+            raw = SQLiteTools({question.db_id: db}, ToolLimits(timeout_seconds=min(30, remaining)),
                               metadata=self.metadata, cancelled=self.stop.is_set)
             observed = ObservedTools(raw, emit, self.stop)
             if metric_sql is not None:
@@ -831,7 +939,8 @@ class Observatory:
                 if not supported_schema(initial_check[0], observed.load_schema(question.db_id)):
                     initial_check = None
             with httpx.Client(base_url='http://127.0.0.1:11434', trust_env=False,
-                              follow_redirects=False, timeout=600) as client:
+                              follow_redirects=False, timeout=self.run_timeout,
+                              event_hooks={'request': [self.stop.limit_request]}) as client:
                 model = LocalOllamaModel(client, 'qwen3:4b-instruct', 16384, num_threads=8, cpu_only=True)
                 emit({'event': 'model_ready', 'model': model.metadata})
                 config = WorkflowConfig(observed, model, context=ContextPolicy(input_budget=14000,
@@ -894,6 +1003,13 @@ class Observatory:
         except Exception as error:
             result.update(status='failed', error_type=type(error).__name__, error=str(error))
         finally:
+            if self.stop.expired() or result.get('error_type') in ('ReadTimeout', 'WriteTimeout', 'PoolTimeout'):
+                result = {'status': 'failed', 'error_type': 'TaskTimeout',
+                          'error': 'Query timed out', 'score': None, 'cloud_api_calls': 0}
+                latest.clear()
+            elif self.stop.is_set() and result.get('status') != 'stopped':
+                result = {'status': 'stopped', 'error': 'Query stopped', 'score': None, 'cloud_api_calls': 0}
+                latest.clear()
             completed = latest.get('workflow_completed', {})
             result['tokens'] = token_totals(calls)
             result['semantic_status'] = completed.get('semantic_status', 'not_completed')
@@ -1220,21 +1336,26 @@ def argument_parser():
     parser.add_argument('--workspace-db', type=Path, default=None,
                         help='Optional workspace metadata SQLite file. Omit to leave startup unchanged.')
     parser.add_argument('--port', type=int, default=8765)
+    parser.add_argument('--queue-limit', type=int, default=8, help='Maximum waiting tasks')
+    parser.add_argument('--run-timeout', type=float, default=600, help='Execution budget in seconds, excluding queue wait')
     return parser
 
 
 def main():
     args = argument_parser().parse_args()
     app = Observatory(args.data_dir, args.output_dir, args.metadata, args.history, args.analysis_dir,
-                      args.recorded_batch, sources=args.sources, workspace_db=args.workspace_db)
+                      args.recorded_batch, sources=args.sources, workspace_db=args.workspace_db,
+                      queue_limit=args.queue_limit, run_timeout=args.run_timeout)
     server = ThreadingHTTPServer(('127.0.0.1', args.port), make_handler(app))
     landing = '/workspace/' if args.workspace_db else '/'
     print(f'SQL Agent Lab http://127.0.0.1:{server.server_port}{landing}', flush=True)
     try:
+        app.resume_pending()
         server.serve_forever()
     except KeyboardInterrupt:
-        app.stop.set()
+        pass
     finally:
+        app.shutdown()
         server.server_close()
 
 

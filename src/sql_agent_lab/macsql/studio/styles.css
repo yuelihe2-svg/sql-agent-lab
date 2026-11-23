@@ -239,7 +239,7 @@ h2 { margin: 0 0 8px; font-size: 15px; }
 .numeric { text-align: right; }
 .table-wrap th { color: var(--ink); }
 .table-wrap tbody tr:hover { background: var(--hover); }
-.status-running, .status-stopped, .status-interrupted, .status-stopping { color: var(--warn); }
+.status-queued, .status-running, .status-stopped, .status-interrupted, .status-stopping { color: var(--warn); }
 .status-completed { background: var(--band); color: var(--accent-dark); }
 .profile-list { margin: 12px 0; }
 .profile-list div {

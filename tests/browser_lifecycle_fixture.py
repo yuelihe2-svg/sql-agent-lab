@@ -54,7 +54,11 @@ def main():
     parser.add_argument('--empty-workspace', action='store_true',
                         help='Start with no sources so the first upload can be tested')
     parser.add_argument('--answer-cases', action='store_true', help='Save scalar/zero/empty/null/error examples without models')
+    parser.add_argument('--queue-demo', action='store_true', help='Offline workspace with a 30-second task deadline')
+    parser.add_argument('--port', type=int, default=0)
     args = parser.parse_args()
+    if args.queue_demo:
+        args.standalone = args.workspace = True
     if args.empty_workspace:
         if args.showcase or args.answer_cases:
             parser.error('--empty-workspace cannot seed examples')
@@ -119,7 +123,8 @@ def main():
                 entries.append({'id': source_id, 'name': name, 'path': db.name})
             sources.write_text(json.dumps({'sources': entries}), encoding='utf8')
         app = live_ui.Observatory(None, root / 'runs', sources=sources,
-                                  workspace_db=root / 'workspace.sqlite' if args.workspace else None)
+                                  workspace_db=root / 'workspace.sqlite' if args.workspace else None,
+                                  run_timeout=30 if args.queue_demo else 600)
     else:
         app = live_ui.Observatory(data, root / 'runs')
     if args.answer_cases:
@@ -140,13 +145,16 @@ def main():
             emit = self.config.trace
             emit({'event': 'call_started', 'role': 'decomposer', 'call_id': 'offline',
                   'messages': [], 'simulated': True})
-            if question.question_id == '5' or (args.workspace and question.question == 'Wait for release'):
+            if (question.question_id == '5' or (args.workspace and question.question == 'Wait for release')
+                    or (args.queue_demo and question.question == '离线慢任务')):
                 deadline = time.monotonic() + 300
                 while not (root / 'release').exists():
                     if time.monotonic() > deadline:
                         raise TimeoutError('Offline fixture wait expired')
-                    if args.workspace and self.config.tools.stop.wait(.1):
-                        raise live_ui.Stopped('Stopped during the offline fixture wait')
+                    if args.workspace:
+                        self.config.tools.stop.wait(.1)
+                        if self.config.tools.stop.is_set():
+                            raise live_ui.Stopped('Stopped during the offline fixture wait')
                     if not args.workspace:
                         time.sleep(.1)
             if question.question_id == '4' or (args.workspace and question.question == 'Simulate a failed query'):
@@ -172,15 +180,19 @@ def main():
 
     with patch.object(live_ui, 'LocalOllamaModel', lambda *a, **k: SimpleNamespace(metadata={'fixture': True})), \
          patch.object(live_ui, 'ReferenceMacSQLAgent', FakeAgent):
-        server = ThreadingHTTPServer(('127.0.0.1', 0), FixtureHandler)
+        server = ThreadingHTTPServer(('127.0.0.1', args.port), FixtureHandler)
         server.timeout = .2
         address = f'http://127.0.0.1:{server.server_port}'
         (root / 'offline-fixture.json').write_text(json.dumps({**metrics, 'url': address}), encoding='utf8')
         print(json.dumps({'url': address, 'root': str(root), 'outbound_network': 'denied'}), flush=True)
         try:
+            app.resume_pending()
             while not (root / 'shutdown').exists():
                 server.handle_request()
+        except KeyboardInterrupt:
+            pass
         finally:
+            app.shutdown()
             server.server_close()
             (root / 'fixture-metrics.json').write_text(json.dumps(metrics), encoding='utf8')
 

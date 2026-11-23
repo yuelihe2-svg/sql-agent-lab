@@ -273,7 +273,9 @@ def _run_from_saved(run_id, datasource_id, manifest, task, result, artifact_dir,
         conversation_id=conversation_id,
         user_message_id=user_message_id,
         datasource_id=datasource_id,
-        state=task.get('state'),
+        # The durable task file carries queued state. Keep compatibility with
+        # existing workspace SQLite CHECK constraints when mirroring the task.
+        state='running' if task.get('state') == 'queued' else task.get('state'),
         stage=task.get('stage') or None,
         started_at=task.get('started_at'),
         updated_at=task.get('updated_at'),
@@ -520,7 +522,8 @@ class WorkspaceStore:
                 rows = conn.execute('SELECT * FROM agent_run ORDER BY started_at, id')
             else:
                 rows = conn.execute(
-                    'SELECT * FROM agent_run WHERE conversation_id = ? ORDER BY started_at, id',
+                    'SELECT r.* FROM agent_run r LEFT JOIN message m ON m.id = r.user_message_id '
+                    'WHERE r.conversation_id = ? ORDER BY m.seq, r.started_at, r.id',
                     (conversation_id,))
             return [_run_from_row(row) for row in rows]
 
@@ -531,8 +534,11 @@ class WorkspaceStore:
                 'SELECT r.*, m.seq, m.role, m.body, m.created_at AS message_created_at '
                 'FROM message m JOIN agent_run r ON r.user_message_id = m.id '
                 'AND r.conversation_id = m.conversation_id '
-                'WHERE m.conversation_id = ? AND r.id != ? ORDER BY m.seq DESC LIMIT ?',
-                (conversation_id, exclude_run_id, limit)).fetchall()
+                'WHERE m.conversation_id = ? AND r.id != ? AND m.seq < COALESCE(('
+                'SELECT prior.seq FROM agent_run current JOIN message prior ON prior.id = current.user_message_id '
+                'WHERE current.id = ? AND prior.conversation_id = m.conversation_id'
+                '), 9223372036854775807) ORDER BY m.seq DESC LIMIT ?',
+                (conversation_id, exclude_run_id, exclude_run_id, limit)).fetchall()
         return [(Message(row['user_message_id'], row['seq'], row['role'], row['body'],
                          row['message_created_at'], conversation_id), _run_from_row(row))
                 for row in reversed(rows)]

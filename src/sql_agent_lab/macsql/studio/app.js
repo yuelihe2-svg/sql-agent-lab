@@ -198,7 +198,14 @@
     "数据库操作：": "Database actions for ",
     "运行详情": "Run details",
     "查看统计口径": "Query basis",
-    "需核对": "Needs review"
+    "需核对": "Needs review",
+    "正在排队": "Queued",
+    "等待前面的任务完成。": "Waiting for earlier queries to finish.",
+    "取消排队": "Cancel queued query",
+    "加入队列": "Queue query",
+    "当前有查询在执行，新问题将排队。": "A query is running. New questions will be queued.",
+    "本次处理超时，可以缩小查询范围后重试。": "Query timed out. Narrow the query and try again.",
+    "查询超时": "Timed out"
   };
   function ui(text) { return locale === 'en' ? (english[text] ?? text) : text; }
 
@@ -237,6 +244,7 @@
   }
   function statusLabel(status) {
     return {
+      queued: ui('正在排队'),
       completed: ui('已完成'),
       failed: ui('查询失败'),
       running: ui('正在处理'),
@@ -259,8 +267,9 @@
   }
   function displaySummary(run) {
     const view = run && run.result || {};
-    if (view.summary) return view.summary;
+    if (view.summary) return ui(view.summary);
     const state = run && run.state;
+    if (state === 'queued') return ui('等待前面的任务完成。');
     if (state === 'running') return stageLabel(run.stage);
     if (state === 'stopping') return ui('已收到停止请求，正在等待当前操作返回。');
     if (state === 'stopped') return ui('查询已停止。可以修改问题后再次发起。');
@@ -285,6 +294,7 @@
         body: displaySummary(run),
         clarification: view.needs_clarification === true,
         needsReview: view.execution_status === 'needs_review',
+        timedOut: view.error === '本次处理超时，可以缩小查询范围后重试。',
         state: run.state,
         stage: run.stage || view.stage || null,
         sql: view.sql || null,
@@ -361,7 +371,7 @@
     article.setAttribute('aria-label', ui('回答'));
     const meta = el(doc, 'div', 'meta');
     meta.append(el(doc, 'span', 'status-chip status-' + (item.clarification || item.needsReview ? 'clarification' : item.state || ''),
-      item.clarification ? ui('需要补充条件') : item.needsReview ? ui('需核对') : statusLabel(item.state)));
+      item.clarification ? ui('需要补充条件') : item.needsReview ? ui('需核对') : item.timedOut ? ui('查询超时') : statusLabel(item.state)));
     if (item.preview) meta.append(el(doc, 'span', null, item.complete ? ui('全部返回行') : ui('结果预览')));
     if (item.elapsed != null) meta.append(el(doc, 'span', null, formatElapsed(item.elapsed)));
     article.append(meta);
@@ -434,8 +444,8 @@
       show.addEventListener('click', function () { handlers.showSql(item.id); });
       article.append(show);
     }
-    if (item.state === 'running') {
-      const stop = el(doc, 'button', 'text-action', ui('停止'));
+    if (['queued', 'running'].includes(item.state)) {
+      const stop = el(doc, 'button', 'text-action', item.state === 'queued' ? ui('取消排队') : ui('停止'));
       stop.type = 'button';
       stop.addEventListener('click', function () { handlers.stop(item.id); });
       article.append(stop);
@@ -449,7 +459,7 @@
     const ownRun = conversation && (conversation.runs || []).some(function (run) {
       return run.id === state.activeRunId && ['running', 'stopping'].includes(run.state);
     });
-    const navigationLocked = Boolean(state.navigating || state.sending || ownRun);
+    const navigationLocked = Boolean(state.navigating || state.sending);
     const sidebarKey = JSON.stringify([state.sources, state.conversations, state.datasourceId,
       conversation && conversation.conversation.id, navigationLocked]);
     doc.querySelector('.shell').classList.toggle('details-closed', state.view === 'overview' || !state.detailsOpen);
@@ -535,10 +545,10 @@
       nodes.threadKey = threadKey;
     }
     const busy = Boolean(state.sending || state.activeRunId);
-    nodes.send.disabled = busy || state.navigating || !state.workspace || !source || !nodes.question.value.trim();
-    nodes.send.textContent = state.sending ? ui('正在发送…') : state.activeRunId ? ui('查询运行中') : ui('发送');
+    nodes.send.disabled = state.sending || state.navigating || !state.workspace || !source || !nodes.question.value.trim();
+    nodes.send.textContent = state.sending ? ui('正在发送…') : state.activeRunId ? ui('加入队列') : ui('发送');
     nodes.runHint.hidden = !state.activeRunId || ownRun;
-    nodes.runHint.textContent = nodes.runHint.hidden ? '' : ui('其他页面中有查询正在运行。');
+    nodes.runHint.textContent = nodes.runHint.hidden ? '' : ui('当前有查询在执行，新问题将排队。');
     const control = groundingControl(state.workspace);
     nodes.groundingInput.disabled = !control.enabled || !conversation || busy;
     if (!control.enabled) nodes.groundingInput.checked = true;
@@ -1394,7 +1404,7 @@
         const active = state.activeRunId;
         await refreshList();
         if (version !== revision) return;
-        if (state.view === 'chat' && state.detail && (active || state.activeRunId)) {
+        if (state.view === 'chat' && state.detail && (active || state.activeRunId || state.detail.runs.some(run => run.state === 'queued'))) {
           await openConversation(state.detail.conversation.id);
         } else paint();
         if (version === revision && state.notice) {
@@ -1631,7 +1641,7 @@
     form.addEventListener('submit', function (event) {
       event.preventDefault();
       const text = question.value.trim();
-      if (!text || state.navigating || state.sending || state.activeRunId || !state.workspace || !state.datasourceId) {
+      if (!text || state.navigating || state.sending || !state.workspace || !state.datasourceId) {
         paint();
         return;
       }
@@ -1659,7 +1669,7 @@
         .finally(function () { state.sending = false; paint(); });
     });
     question.addEventListener('input', function () {
-      nodes.send.disabled = !state.workspace || !state.datasourceId || state.navigating || state.sending || Boolean(state.activeRunId) || !question.value.trim();
+      nodes.send.disabled = !state.workspace || !state.datasourceId || state.navigating || state.sending || !question.value.trim();
     });
     groundingInput.addEventListener('change', function () { strategy.hidden = !groundingInput.checked; });
     question.addEventListener('keydown', function (event) {
