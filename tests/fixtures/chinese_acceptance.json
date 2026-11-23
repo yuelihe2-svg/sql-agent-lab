@@ -1,0 +1,266 @@
+[
+  {
+    "id": 1,
+    "question": "统计2024年上海已付款订单总金额，已付款指 status = paid。",
+    "conversation": "multi",
+    "source": "shop",
+    "expected_sql": "SELECT SUM(amount) FROM orders WHERE city='上海' AND year=2024 AND status='paid'",
+    "expected_rows": [
+      [
+        300
+      ]
+    ]
+  },
+  {
+    "id": 2,
+    "question": "那杭州呢？",
+    "conversation": "multi",
+    "source": "shop",
+    "expected_sql": "SELECT SUM(amount) FROM orders WHERE city='杭州' AND year=2024 AND status='paid'",
+    "expected_rows": [
+      [
+        400
+      ]
+    ]
+  },
+  {
+    "id": 3,
+    "question": "改成2023年呢？",
+    "conversation": "multi",
+    "source": "shop",
+    "expected_sql": "SELECT SUM(amount) FROM orders WHERE city='杭州' AND year=2023 AND status='paid'",
+    "expected_rows": [
+      [
+        800
+      ]
+    ]
+  },
+  {
+    "id": 4,
+    "question": "新问题：统计全部订单数量，不限制城市年份状态。",
+    "conversation": "multi",
+    "source": "shop",
+    "expected_sql": "SELECT COUNT(*) FROM orders",
+    "expected_rows": [
+      [
+        6
+      ]
+    ]
+  },
+  {
+    "id": 5,
+    "question": "统计全部订单总金额，不限制任何条件。",
+    "conversation": "single",
+    "source": "shop",
+    "expected_sql": "SELECT SUM(amount) FROM orders",
+    "expected_rows": [
+      [
+        3100
+      ]
+    ]
+  },
+  {
+    "id": 6,
+    "question": "统计全部订单数量，不限制任何条件。",
+    "conversation": "single",
+    "source": "shop",
+    "expected_sql": "SELECT COUNT(*) FROM orders",
+    "expected_rows": [
+      [
+        6
+      ]
+    ]
+  },
+  {
+    "id": 7,
+    "question": "统计平均订单金额，不限制任何条件。",
+    "conversation": "single",
+    "source": "shop",
+    "expected_sql": "SELECT AVG(amount) FROM orders",
+    "expected_rows": [
+      [
+        516.6666666666666
+      ]
+    ]
+  },
+  {
+    "id": 8,
+    "question": "统计最大订单金额，不限制任何条件。",
+    "conversation": "single",
+    "source": "shop",
+    "expected_sql": "SELECT MAX(amount) FROM orders",
+    "expected_rows": [
+      [
+        900
+      ]
+    ]
+  },
+  {
+    "id": 9,
+    "question": "统计最小订单金额，不限制任何条件。",
+    "conversation": "single",
+    "source": "shop",
+    "expected_sql": "SELECT MIN(amount) FROM orders",
+    "expected_rows": [
+      [
+        100
+      ]
+    ]
+  },
+  {
+    "id": 10,
+    "question": "统计2024年上海订单总金额，包括所有付款状态。",
+    "conversation": "single",
+    "source": "shop",
+    "expected_sql": "SELECT SUM(amount) FROM orders WHERE city='上海' AND year=2024",
+    "expected_rows": [
+      [
+        1200
+      ]
+    ]
+  },
+  {
+    "id": 11,
+    "question": "统计2024年杭州订单总金额，包括所有付款状态。",
+    "conversation": "single",
+    "source": "shop",
+    "expected_sql": "SELECT SUM(amount) FROM orders WHERE city='杭州' AND year=2024",
+    "expected_rows": [
+      [
+        400
+      ]
+    ]
+  },
+  {
+    "id": 12,
+    "question": "统计2023年上海订单总金额，包括所有付款状态。",
+    "conversation": "single",
+    "source": "shop",
+    "expected_sql": "SELECT SUM(amount) FROM orders WHERE city='上海' AND year=2023",
+    "expected_rows": [
+      [
+        700
+      ]
+    ]
+  },
+  {
+    "id": 13,
+    "question": "统计2023年杭州订单总金额，包括所有付款状态。",
+    "conversation": "single",
+    "source": "shop",
+    "expected_sql": "SELECT SUM(amount) FROM orders WHERE city='杭州' AND year=2023",
+    "expected_rows": [
+      [
+        800
+      ]
+    ]
+  },
+  {
+    "id": 14,
+    "question": "统计全部已付款订单金额，status = paid。",
+    "conversation": "single",
+    "source": "shop",
+    "expected_sql": "SELECT SUM(amount) FROM orders WHERE status='paid'",
+    "expected_rows": [
+      [
+        2200
+      ]
+    ]
+  },
+  {
+    "id": 15,
+    "question": "统计取消订单金额，status = cancelled。",
+    "conversation": "single",
+    "source": "shop",
+    "expected_sql": "SELECT SUM(amount) FROM orders WHERE status='cancelled'",
+    "expected_rows": [
+      [
+        900
+      ]
+    ]
+  },
+  {
+    "id": 16,
+    "question": "统计2099年订单数量。",
+    "conversation": "single",
+    "source": "shop",
+    "expected_sql": "SELECT COUNT(*) FROM orders WHERE year=2099",
+    "expected_rows": [
+      [
+        0
+      ]
+    ]
+  },
+  {
+    "id": 17,
+    "question": "计算2099年订单金额SUM，不要将空值替换为零。",
+    "conversation": "single",
+    "source": "shop",
+    "expected_sql": "SELECT SUM(amount) FROM orders WHERE year=2099",
+    "expected_rows": [
+      [
+        null
+      ]
+    ]
+  },
+  {
+    "id": 18,
+    "question": "统计所有订单总金额。",
+    "conversation": "single",
+    "source": "archive",
+    "expected_sql": "SELECT SUM(amount) FROM orders",
+    "expected_rows": [
+      [
+        9100
+      ]
+    ]
+  },
+  {
+    "id": 19,
+    "question": "那杭州呢？",
+    "conversation": "fresh",
+    "source": "shop",
+    "kind": "clarify",
+    "expected": "补充完整条件"
+  },
+  {
+    "id": 20,
+    "question": "统计订单",
+    "conversation": "fresh",
+    "source": "shop",
+    "kind": "clarify",
+    "expected": "数量"
+  },
+  {
+    "id": 21,
+    "question": "描述一下这个数据库",
+    "conversation": "fresh",
+    "source": "shop",
+    "kind": "metadata",
+    "expected": "orders"
+  },
+  {
+    "id": 22,
+    "question": "数据库有哪些表",
+    "conversation": "fresh",
+    "source": "shop",
+    "kind": "metadata",
+    "expected": "orders"
+  },
+  {
+    "id": 23,
+    "question": "已付款怎么定义？",
+    "conversation": "fresh",
+    "source": "shop",
+    "kind": "knowledge",
+    "expected": "业务说明"
+  },
+  {
+    "id": 24,
+    "question": "列出2099年的订单",
+    "conversation": "fresh",
+    "source": "shop",
+    "kind": "query",
+    "expected": "empty"
+  }
+]

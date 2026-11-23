@@ -1,4 +1,4 @@
-"""Database overview uses the profile and knowledge APIs without changing a query."""
+"""数据库介绍 uses the profile and knowledge APIs without changing a query."""
 from contextlib import closing
 import sqlite3
 
@@ -28,7 +28,7 @@ def test_overview_script_is_served_and_queries_stay_unchanged(tmp_path, monkeypa
     app = build(tmp_path, monkeypatch)
     with client_for(app) as client:
         script = client.get('/workspace/app.js').text
-        assert 'Database overview' in script
+        assert '数据库介绍' in script
         assert 'innerHTML' not in script
         assert 'storage_key' not in script
         missing = client.get('/api/sources/missing/profile')
@@ -56,4 +56,4 @@ def test_overview_script_is_served_and_queries_stay_unchanged(tmp_path, monkeypa
     with client_for(bare) as client:
         assert client.get('/api/sources/shop/profile').status_code == 404
         assert client.get('/api/sources/shop/context').status_code == 404
-        assert 'Database overview' in client.get('/workspace/app.js').text
+        assert '数据库介绍' in client.get('/workspace/app.js').text

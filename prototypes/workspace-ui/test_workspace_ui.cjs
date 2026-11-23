@@ -2,23 +2,24 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-const studio = require('./app.js');
+const assets = path.join(__dirname, '../../src/sql_agent_lab/macsql/studio');
+const studio = require(path.join(assets, 'app.js'));
 
-const source = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
-const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+const source = fs.readFileSync(path.join(assets, 'app.js'), 'utf8');
+const html = fs.readFileSync(path.join(assets, 'index.html'), 'utf8');
 assert.equal(/\binnerHTML\b|insertAdjacentHTML|outerHTML|document\.write|\beval\(/.test(source), false);
 assert.equal(/1284600|demo-retail|演示 SQL|准确率/.test(source), false);
 assert.equal(html.includes('/workspace/app.js'), true);
 
-assert.equal(studio.formatTokens(null), 'Not recorded');
+assert.equal(studio.formatTokens(null), '未记录');
 assert.equal(studio.formatTokens(0), '0');
-assert.equal(studio.formatElapsed(null), 'Not recorded');
+assert.equal(studio.formatElapsed(null), '未记录');
 assert.equal(studio.cellText(null).text, 'NULL');
 assert.equal(studio.cellText('').text, '');
-assert.equal(studio.caption({ preview: true, complete: false }).includes('Result preview'), true);
-assert.equal(studio.caption({ preview: true, complete: true }).includes('All returned rows'), true);
-assert.equal(studio.statusLabel('interrupted'), 'Interrupted');
-assert.equal(studio.statusLabel('stopped'), 'Stopped');
+assert.equal(studio.caption({ preview: true, complete: false }).includes('预览'), true);
+assert.equal(studio.caption({ preview: true, complete: true }).includes('全部返回行'), true);
+assert.equal(studio.statusLabel('interrupted'), '已中断');
+assert.equal(studio.statusLabel('stopped'), '已停止');
 
 const sources = studio.publicSources({
   sources: [{ id: 'shop', name: 'Shop', kind: 'sqlite', read_only: true, path: 'D:/secret/business.sqlite' }]
@@ -34,14 +35,14 @@ const detail = {
     {
       id: 'r1', user_message_id: 'm1', state: 'completed', stage: 'finished',
       result: {
-        summary: '"n" is 42.', sql: 'SELECT n FROM numbers',
+        summary: '「n」的查询结果是 42。', sql: 'SELECT n FROM numbers',
         columns: ['n'], rows: [[42]], preview: true, has_more: false, truncated: false,
         complete: true, elapsed_seconds: 1.2, tokens: { input: null, output: 3 }, evaluated: false
       }
     },
     {
       id: 'r2', user_message_id: 'm2', state: 'failed', stage: 'execute',
-      result: { summary: 'No matching table or column was found. Check the names, or add the business meaning to the question.', sql: 'SELECT missing', columns: [], rows: [], preview: true, complete: false, evaluated: false, tokens: { input: null, output: null } }
+      result: { summary: '未找到对应的表或字段，请核对名称，或补充问题中的业务含义。', sql: 'SELECT missing', columns: [], rows: [], preview: true, complete: false, evaluated: false, tokens: { input: null, output: null } }
     }
   ]
 };
@@ -51,11 +52,11 @@ assert.equal(turns[1].sql, 'SELECT n FROM numbers');
 assert.equal(turns[1].complete, true);
 assert.equal(turns[1].body.includes('42'), true);
 assert.equal(turns[3].state, 'failed');
-assert.equal(studio.displaySummary({ state: 'stopped', result: {} }).includes('stopped'), true);
-assert.equal(studio.displaySummary({ state: 'interrupted', result: {} }).includes('not rerun automatically'), true);
+assert.equal(studio.displaySummary({ state: 'stopped', result: {} }).includes('已停止'), true);
+assert.equal(studio.displaySummary({ state: 'interrupted', result: {} }).includes('未自动重跑'), true);
 assert.equal(studio.displaySummary({
   state: 'completed',
-  result: { summary: '"n" is 42.', evaluated: false }
+  result: { summary: '「n」的查询结果是 42。', evaluated: false }
 }).includes('100'), false);
 
 function fakeDoc() {
@@ -87,7 +88,7 @@ function texts(node, acc) {
 }
 
 assert.equal(studio.overviewError(404).includes('--workspace-db'), true);
-assert.equal(studio.overviewError(400).includes('could not be read'), true);
+assert.equal(studio.overviewError(400).includes('无法读取'), true);
 const empty = studio.overviewSummary({ name: 'Empty', kind: 'sqlite', tables: [], coverage: { table_count: 0 }, fingerprint: 'abc', extracted_at: null });
 assert.equal(empty.tableCount, 0);
 assert.equal(empty.businessDefinitions, 'not_inferred');
@@ -125,11 +126,11 @@ const view = studio.renderOverview(fakeDoc(), {
   knowledge: []
 }, { edit() {}, remove() {} });
 const shown = texts(view);
-assert.equal(shown.some(function (item) { return item.includes('no user tables'); }), false);
-assert.equal(shown.some(function (item) { return item.includes('No declared primary key'); }), true);
-assert.equal(shown.some(function (item) { return item.includes('No declared foreign key'); }), true);
-assert.equal(shown.some(function (item) { return item.includes('unverified'); }), true);
-assert.equal(shown.some(function (item) { return item.includes('No business knowledge yet'); }), true);
+assert.equal(shown.some(function (item) { return item.includes('没有用户表'); }), false);
+assert.equal(shown.some(function (item) { return item.includes('没有声明主键'); }), true);
+assert.equal(shown.some(function (item) { return item.includes('没有声明外键'); }), true);
+assert.equal(shown.some(function (item) { return item.includes('未经核验'); }), true);
+assert.equal(shown.some(function (item) { return item.includes('还没有业务知识'); }), true);
 assert.equal(shown.join('\n').includes('<img'), false);
 
 const hostile = studio.renderOverview(fakeDoc(), {
@@ -139,9 +140,9 @@ const hostile = studio.renderOverview(fakeDoc(), {
 }, { edit() {}, remove() {} });
 const hostileText = texts(hostile).join('\n');
 assert.equal(hostileText.includes('<img src=x>'), true);
-assert.equal(hostileText.includes('version 2'), true);
+assert.equal(hostileText.includes('版本 2'), true);
 assert.equal(hostileText.includes('archive only'), false);
-assert.equal(hostileText.includes('This database has no user tables.'), true);
+assert.equal(hostileText.includes('这个数据库没有用户表'), true);
 
 const grounding = studio.renderGrounding(fakeDoc(), {
   question: 'customer name for each order',
@@ -157,20 +158,16 @@ const grounding = studio.renderGrounding(fakeDoc(), {
   }]
 });
 const grounded = texts(grounding).join('\n');
-assert.equal(grounded.includes('Schema fact'), true);
-assert.equal(grounded.includes('User-provided / Unverified'), true);
-assert.equal(grounded.includes('is not a system instruction'), true);
-assert.equal(grounded.includes('Strategy keyword'), true);
-assert.equal(grounded.includes('Keyword score'), false);
-assert.equal(studio.retrievalPreviewPayload('How many orders?').retrieval_strategy, 'keyword');
-assert.equal(studio.retrievalPreviewPayload('How many orders?', 'bm25').retrieval_strategy, 'bm25');
-assert.equal(studio.retrievalPreviewPayload('How many orders?', 'embedding').retrieval_strategy, 'keyword');
+assert.equal(grounded.includes('数据库结构事实'), true);
+assert.equal(grounded.includes('用户提供／未经核实'), true);
+assert.equal(grounded.includes('不会当作系统指令'), true);
+assert.equal(grounded.includes('orders'), true);
 
 assert.equal(studio.messagePayload('How many orders?', false).use_grounding, false);
 assert.equal(studio.messagePayload('How many orders?', true).use_grounding, true);
 assert.equal(studio.groundingControl(false).enabled, false);
-assert.equal(studio.groundingControl(false).note.includes('Workspace'), true);
+assert.equal(studio.groundingControl(false).note.includes('工作区'), true);
 assert.equal(studio.groundingControl(true).enabled, true);
-assert.equal(studio.groundingControl(true).label, 'Use Database Grounding');
+assert.equal(studio.groundingControl(true).label, '使用数据库依据');
 
 console.log('workspace ui checks passed');

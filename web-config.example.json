@@ -3,6 +3,7 @@
   "data_dir": null,
   "metadata": null,
   "output_dir": "D:/sql-agent-runs/web",
+  "workspace_db": null,
   "analysis_dir": null,
   "history": null,
   "recorded_batches": []

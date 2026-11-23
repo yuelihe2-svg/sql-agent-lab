@@ -103,7 +103,7 @@ def test_conversation_grounding_is_explicit_and_isolated(tmp_path, monkeypatch):
         assert rejected.status_code == 400
         assert calls['n'] == 0
         off = client.post(f"/api/conversations/{created['id']}/messages",
-                          json={'question': 'How many numbers?'})
+                          json={'question': 'How many numbers?', 'use_grounding': False})
         assert off.status_code == 200
         wait_done(app)
         assert calls['n'] == 0
@@ -152,6 +152,21 @@ def test_conversation_grounding_is_explicit_and_isolated(tmp_path, monkeypatch):
         third = client.get(f"/api/conversations/{created['id']}").json()['runs'][2]['result']['grounding']
         assert shop_doc.json()['id'] in third['knowledge_skipped']
         assert 'Numbers count is a user definition' not in seen['block']
+        for strategy in ('bm25', 'hybrid'):
+            app.worker_done.clear()
+            requested = client.post(f"/api/conversations/{created['id']}/messages", json={
+                'question': 'How many numbers?', 'use_grounding': True, 'retrieval_strategy': strategy,
+            })
+            assert requested.status_code == 200
+            wait_done(app)
+            selected = client.get(f"/api/conversations/{created['id']}").json()['runs'][-1]
+            assert selected['result']['grounding']['strategy'] == strategy
+
+        invalid = client.post(f"/api/conversations/{created['id']}/messages", json={
+            'question': 'How many numbers?', 'use_grounding': True, 'retrieval_strategy': 'invalid',
+        })
+        assert invalid.status_code == 400
+        assert 'retrieval_strategy' in invalid.json()['error']
     assert shop.read_bytes() == before
     profile = extract_profile(shop)
     assert 'credential' not in json.dumps(profile)

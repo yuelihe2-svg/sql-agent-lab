@@ -70,7 +70,7 @@ def schema_text(schema, level=0, *, preserve_types=False):
     return '\n'.join(lines)
 
 
-def _messages(prompt, grounding=''):
+def _messages(prompt, grounding='', conversation=''):
     """Role prompt plus an optional untrusted data message.
 
     An empty grounding value keeps the original two-message shape. The role
@@ -83,6 +83,8 @@ def _messages(prompt, grounding=''):
     messages = [{'role': 'system', 'content': system}, {'role': 'user', 'content': prompt}]
     if grounding:
         messages.append({'role': 'user', 'content': grounding})
+    if conversation:
+        messages.append({'role': 'user', 'content': conversation})
     return messages
 
 
@@ -99,7 +101,7 @@ class ReferenceMacSQLAgent(ReferenceGraphAgent):
                            self.config.context.context_window - output_tokens - self.config.context.safety_margin)
         for level in range(4):
             prompt = make_prompt(schema_text(schema, level, preserve_types=role == 'semantic_review'))
-            messages = _messages(prompt, self.grounding_block)
+            messages = _messages(prompt, self.grounding_block, self.conversation_block)
             units = self.config.context.count_tokens(messages)
             if units <= input_budget:
                 return messages, {'level': level, 'input_budget_units': units,
@@ -214,7 +216,7 @@ class ReferenceMacSQLAgent(ReferenceGraphAgent):
         render_decomposer = lambda s: self._decomposer_prompt(
             question.question, question.evidence, s, hints)
         full_prompt_units = self.config.context.count_tokens(
-            _messages(render_decomposer(schema_text(full, 0)), self.grounding_block))
+            _messages(render_decomposer(schema_text(full, 0)), self.grounding_block, self.conversation_block))
         selector_invoked = full_prompt_units > self.config.context.input_budget
         if not selector_invoked:
             selected, pruned = full, False

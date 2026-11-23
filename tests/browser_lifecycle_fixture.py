@@ -10,7 +10,6 @@ import json
 from pathlib import Path
 import sqlite3
 import sys
-import threading
 import time
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -51,12 +50,15 @@ def main():
     parser.add_argument('--root', type=Path, required=True)
     parser.add_argument('--standalone', action='store_true', help='Two SQLite sources without any BIRD files')
     parser.add_argument('--showcase', action='store_true', help='Use synthetic shop data and fixed SQL (requires --standalone)')
+    parser.add_argument('--workspace', action='store_true', help='Enable the workspace with synthetic sources')
     parser.add_argument('--answer-cases', action='store_true', help='Save scalar/zero/empty/null/error examples without models')
     args = parser.parse_args()
     if args.showcase and not args.standalone:
         parser.error('--showcase requires --standalone')
     if args.answer_cases and not args.standalone:
         parser.error('--answer-cases requires --standalone')
+    if args.workspace and not args.standalone:
+        parser.error('--workspace requires --standalone')
     root = args.root.resolve()
     checkout = Path(__file__).resolve().parents[1]
     if root == checkout or checkout in root.parents:
@@ -109,14 +111,18 @@ def main():
                 name = ('演示商店 · 合成数据' if source_id == 'first' else '备用演示库 · 合成数据') if args.showcase else f'离线数据 {value}'
                 entries.append({'id': source_id, 'name': name, 'path': db.name})
             sources.write_text(json.dumps({'sources': entries}), encoding='utf8')
-        app = live_ui.Observatory(None, root / 'runs', sources=sources)
+        app = live_ui.Observatory(None, root / 'runs', sources=sources,
+                                  workspace_db=root / 'workspace.sqlite' if args.workspace else None)
     else:
         app = live_ui.Observatory(data, root / 'runs')
     if args.answer_cases:
         seed_answer_cases(app)
     analysis = root / 'analysis'
     analysis.mkdir(exist_ok=True)
-    (analysis / 'analysis.json').write_text('{"rows":[]}', encoding='utf8')
+    report = dict(rows=[], stages={}, definitions={}, versions=[], priorities=[], inventory=[],
+                  excluded=[], warnings=[], generated_at='2026-01-01T00:00:00Z',
+                  recommendation='', hpc='', scope_note='Synthetic fixture. No saved evaluation runs.')
+    (analysis / 'analysis.json').write_text(json.dumps(report), encoding='utf8')
     app.analysis_dir = analysis
 
     class FakeAgent:
@@ -127,13 +133,16 @@ def main():
             emit = self.config.trace
             emit({'event': 'call_started', 'role': 'decomposer', 'call_id': 'offline',
                   'messages': [], 'simulated': True})
-            if question.question_id == '5':
+            if question.question_id == '5' or (args.workspace and question.question == 'Wait for release'):
                 deadline = time.monotonic() + 300
                 while not (root / 'release').exists():
                     if time.monotonic() > deadline:
                         raise TimeoutError('Offline fixture wait expired')
-                    threading.Event().wait(.1)
-            if question.question_id == '4':
+                    if args.workspace and self.config.tools.stop.wait(.1):
+                        raise live_ui.Stopped('Stopped during the offline fixture wait')
+                    if not args.workspace:
+                        time.sleep(.1)
+            if question.question_id == '4' or (args.workspace and question.question == 'Simulate a failed query'):
                 raise RuntimeError('离线注入异常：用于验证失败状态')
             sql = 'SELECT n+1 AS n FROM numbers' if question.question_id == '3' else 'SELECT n FROM numbers'
             if args.showcase:

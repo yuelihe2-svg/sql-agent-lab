@@ -24,7 +24,7 @@ assert.equal(present({result: {status: 'needs_review', score: 1}}).label, '已�
 assert.equal(present({active: true, task: {state: 'stopping'}}).canStop, false);
 assert.equal(present({active: true, task: {state: 'running'}}).canStop, true);
 context.renderTask({id: 'demo', active: true, task: {state: 'stopping', stage: 'decomposer'}});
-assert.equal(element('status').textContent, '停止中');
+assert.equal(element('status').textContent, '正在停止');
 assert.equal(element('stop').disabled, true);
 assert.match(element('taskProblem').textContent, /等待当前操作/);
 context.renderTask({id: 'demo', task: {state: 'interrupted', ended_at: null}});

@@ -1,6 +1,6 @@
 # SQL Agent Studio
 
-The workspace page is served locally at `/workspace/`. The layout follows the static prototype. Query results come from the Conversation API allowlist, and the page does not use built-in demo numbers.
+The workspace page is served locally at `/workspace/`. The Python package includes the page assets. Query results come from the Conversation API allowlist, and the page does not use built-in demo numbers.
 
 Example start command (keep data files outside the repository):
 
@@ -17,3 +17,14 @@ Check:
 ```powershell
 node prototypes/workspace-ui/test_workspace_ui.cjs
 ```
+
+For browser testing with synthetic SQLite data and a scripted Agent:
+
+```powershell
+.\.venv\Scripts\python.exe -B tests/browser_lifecycle_fixture.py --standalone --workspace --root <new-directory-outside-the-repo>
+```
+
+Open `/workspace/` on the loopback address printed by the fixture. Ask
+`Wait for release` to exercise a running query. Create the `release` file
+under the fixture directory to finish it, or use **Stop** in the page.
+Create the `shutdown` file to end the fixture.

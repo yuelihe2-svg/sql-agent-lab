@@ -113,6 +113,8 @@
 
 ## PR-15 对话 API 与 `/workspace` 页面
 
+当前产品分支已提供 `/workspace/` 和对话 API。`--workspace-db` 启用对话，页面轮询任务状态，停止操作沿用 `POST /api/stop`。
+
 - 内容：实现 `frontend-design.md` 的对话接口和页面。`/`、`/observatory`、`/analysis` 保持原文件。新页面用 `textContent`。语义复核控件不出现。
 - 验收：无模型夹具完成提交、刷新、停止和跨对话隔离；旧 Node 测试不改预期。
 - 命令：上述 Node 测试，加上 `.\.venv\Scripts\python.exe -m pytest tests/test_conversations_api.py tests/test_data_sources.py`

@@ -89,3 +89,18 @@ Knowledge create, update, and delete write the same title and body into `knowled
 ## GET /api/sources/{datasource_id}/knowledge/{id}
 
 Returns one document. A missing file or a file that does not match its hash is an error, not an empty document.
+
+## Optional conversation history
+
+Conversation message requests accept a boolean field named
+`use_conversation_context`. It defaults to false. The workspace checkbox
+**Use conversation history** applies to the current request.
+
+When enabled, the server builds a separate untrusted history block before
+Agent execution using public results from earlier runs in the same conversation
+and data source. The current run is excluded. The default budget is 1600 UTF-8
+bytes including the current question. The current question is always retained.
+Oldest turns are removed first, then historical SQL is removed when necessary.
+Failed runs contribute no SQL. ContextPolicy checks the full model input after
+the block is attached. Offline checks verify transport and isolation, while
+follow-up answer quality requires model evaluation.

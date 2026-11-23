@@ -20,7 +20,7 @@ sql-agent-ui = "sql_agent_lab.macsql.live_ui:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"sql_agent_lab.macsql" = ["*.html", "fixtures/*.json"]
+"sql_agent_lab.macsql" = ["*.html", "fixtures/*.json", "studio/*.html", "studio/*.css", "studio/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "src/sql_agent_lab/macsql"]

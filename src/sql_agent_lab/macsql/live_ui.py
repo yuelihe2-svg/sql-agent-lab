@@ -78,9 +78,12 @@ class Observatory:
         self.sources = SourceRegistry()
         if sources:
             self.sources.load(sources)
+        self.upload_registry = self.output / 'uploaded-sources.json'
+        if self.upload_registry.exists():
+            self.sources.load(self.upload_registry)
         self.benchmark = BirdBenchmark(self.data, self.sources) if self.data else None
         self.databases = self.sources.databases
-        if not self.databases:
+        if not self.databases and workspace_db is None:
             raise ValueError('Configure at least one SQLite source (--sources) or BIRD dataset (--data-dir)')
         # SourceRegistry remains the authority for SQLite paths. The optional
         # metadata file receives only the public catalog.
@@ -98,6 +101,49 @@ class Observatory:
         self.active = None
         self.tasks = {}  # Current-process snapshots, also available if saving fails.
         self._run_conversation = {}
+
+    def upload_database(self, payload):
+        import base64
+        import binascii
+        from .data_sources import SQLiteSource
+        from sql_agent_lab.workspace.profile import extract_profile
+        from sql_agent_lab.workspace.database import sync_registered_sources
+        self._workspace()
+        name = payload.get('name', '')
+        description = payload.get('description', '')
+        if not isinstance(name, str) or not 1 <= len(name.strip()) <= 100:
+            raise ValueError('请输入数据库名称（最多100字）')
+        if not isinstance(description, str) or len(description) > 10000:
+            raise ValueError('业务说明最多10000字')
+        try:
+            data = base64.b64decode(payload.get('data', ''), validate=True)
+        except (ValueError, TypeError, binascii.Error):
+            raise ValueError('数据库文件编码无效')
+        if not data.startswith(b'SQLite format 3\x00') or len(data) > 20 * 1024 * 1024:
+            raise ValueError('请上传不超过20 MB的有效 SQLite 文件')
+        with self.lock:
+            if self.active:
+                raise ValueError('请等待当前查询结束后添加数据库')
+            source_id = 'upload_' + uuid4().hex
+            directory = self.output / 'databases'
+            directory.mkdir(exist_ok=True)
+            target = directory / (source_id + '.sqlite')
+            target.write_bytes(data)
+            try:
+                profile = extract_profile(target)
+            except Exception:
+                target.unlink(missing_ok=True)
+                raise ValueError('数据库无法读取，请上传完整、未加密的 SQLite 文件')
+            source = SQLiteSource(source_id, name.strip(), target)
+            document = json.loads(self.upload_registry.read_text(encoding='utf8')) if self.upload_registry.exists() else {'sources': []}
+            document['sources'].append({'id': source_id, 'name': name.strip(), 'path': str(target), 'kind': 'sqlite'})
+            sync_registered_sources(self.workspace_db, self.sources.catalog() + [source.public()])
+            self.sources.add(source)
+            self.databases = self.sources.databases
+            write_json_atomic(self.upload_registry, document)
+            if description.strip():
+                self.add_source_knowledge(source_id, {'title': '业务说明', 'format': 'text', 'body': description.strip()})
+            return {'source': source.public(), 'profile': profile}
 
     def catalog(self):
         return {'databases': sorted(self.databases), 'sources': self.sources.catalog(),
@@ -318,7 +364,9 @@ class Observatory:
         run_id = self.start({
             'conversation_id': conversation.id,
             'question': payload.get('question', ''),
-            **({'use_grounding': payload['use_grounding']} if 'use_grounding' in payload else {}),
+            'use_grounding': True,
+            'use_conversation_context': True,
+            **{key: payload[key] for key in ('use_grounding', 'retrieval_strategy', 'use_conversation_context') if key in payload},
         })
         task = self.tasks.get(run_id, {})
         if task.get('persistence_error'):
@@ -522,6 +570,11 @@ class Observatory:
             if not isinstance(db, str) or db not in self.databases or not isinstance(text, str) or not 1 <= len(text.strip()) <= 4000:
                 raise ValueError('Choose a database and enter a question (maximum 4000 characters)')
             question, reference = Question('custom', db, text.strip()), None
+        use_history = payload.get('use_conversation_context', False)
+        if not isinstance(use_history, bool):
+            raise ValueError('use_conversation_context must be a boolean')
+        if use_history and conversation_id is None:
+            raise ValueError('Conversation context requires a conversation')
         prepared = self._prepare_grounding(question, payload)
         with self.lock:
             if self.active:
@@ -542,6 +595,9 @@ class Observatory:
                         'cloud_api_calls': 0,
                         'grounding_enabled': prepared['grounding_enabled'],
                         'grounding': prepared['grounding']}
+            if use_history:
+                manifest['conversation_context_enabled'] = True
+                manifest['conversation_id'] = str(conversation_id)
             if prepared['grounding_block']:
                 manifest['grounding_block'] = prepared['grounding_block']
             (path/'manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf8')
@@ -588,6 +644,7 @@ class Observatory:
                 raise Stopped('Stopped before the next model call')
             writer(event)
             self._observe_stage(run_id, event)
+        from sql_agent_lab.workspace.answer_checks import NeedsClarification
         result = {'status': 'failed', 'score': None, 'cloud_api_calls': 0}
         agent_latency_ms = None
         try:
@@ -601,6 +658,13 @@ class Observatory:
                       'model_call': False})
             else:
                 emit({'event': 'grounding_skipped', 'grounding_enabled': False, 'model_call': False})
+            if manifest.get('conversation_context_enabled'):
+                from sql_agent_lab.workspace.chat_intent import direct_answer
+                answer = direct_answer(question.question, lambda: self.refresh_profile(question.db_id),
+                    lambda: self.list_source_knowledge(question.db_id)['knowledge'])
+                if answer:
+                    result.update(status='completed', answer=answer)
+                    return result
             db = self.databases[question.db_id]
             before = sha256(db)
             # Preserve pinning for BIRD sources, including custom questions on them.
@@ -617,6 +681,40 @@ class Observatory:
                     value_lookup=manifest['schema_retrieval'], semantic_review=manifest.get('semantic_review', False))
                 agent = ReferenceMacSQLAgent({role: 'qwen3:4b-instruct' for role in ROLES}, config=config)
                 agent.grounding_block = manifest.get('grounding_block') or ''
+                context = {'turns': []}
+                if manifest.get('conversation_context_enabled'):
+                    from sql_agent_lab.workspace.conversation_context import (
+                        build_conversation_context, turns_from_public_records)
+                    detail = self.conversation_detail(manifest['conversation_id'])
+                    runs = [run for run in detail['runs'] if run['id'] != run_id]
+                    message_ids = {run['user_message_id'] for run in runs}
+                    messages = [message for message in detail['messages'] if message['id'] in message_ids]
+                    history = turns_from_public_records(
+                        messages, datasource_id=question.db_id, runs=runs)
+                    context = build_conversation_context(
+                        conversation_id=manifest['conversation_id'], datasource_id=question.db_id,
+                        question=question.question, history=history)
+                    agent.conversation_block = context['history_block']
+                    emit({'event': 'conversation_context_attached', 'budget': context['budget']})
+                from sql_agent_lab.workspace.answer_checks import clarification, NeedsClarification
+                if manifest.get('conversation_context_enabled'):
+                    previous = runs[-1] if runs else None
+                    if previous and not question.question.startswith(('新问题', '另问', '换个问题', '重新问', '不要沿用', 'new question', 'start over')) and '补充完整条件' in (previous.get('result', {}).get('summary') or ''):
+                        prior = next((m['body'] for m in messages if m['id'] == previous['user_message_id']), '')
+                        # Clarify the supplement itself before resuming, rather than accepting another vague request.
+                        prompt = clarification(question.question, context['turns'])
+                        if prompt:
+                            raise NeedsClarification(prompt)
+                        from dataclasses import replace
+                        question = replace(question, question='原问题：' + prior[:1000] + '\n用户补充：' + question.question)
+                    else:
+                        prompt = clarification(question.question, context['turns'])
+                        if prompt:
+                            raise NeedsClarification(prompt)
+                if manifest.get('conversation_context_enabled'):
+                    from sql_agent_lab.workspace.answer_checks import resolve_year_followup
+                    from dataclasses import replace
+                    question = replace(question, question=resolve_year_followup(question.question, context['turns']))
                 agent_started = time.perf_counter()
                 sql = agent.run(question)
                 agent_latency_ms = round((time.perf_counter() - agent_started) * 1000, 1)
@@ -633,6 +731,8 @@ class Observatory:
                     if evaluation['status']=='error': result['status']='evaluation_failed'
                     emit({'event':'evaluation_completed','score':evaluation['score'],'status':evaluation['status']})
                 result['database_unchanged'] = sha256(db) == before
+        except NeedsClarification as error:
+            result.update(status='completed', clarification=str(error))
         except Stopped as error:
             result.update(status='stopped', error=str(error))
         except Exception as error:
@@ -680,7 +780,7 @@ def _public_message(message):
             'role': message.role, 'body': message.body, 'created_at': message.created_at}
 
 
-_STUDIO_ROOT = Path(__file__).resolve().parents[3] / 'prototypes' / 'workspace-ui'
+_STUDIO_ROOT = Path(__file__).resolve().with_name('studio')
 _STUDIO_FILES = {
     '/workspace': 'index.html',
     '/workspace/': 'index.html',
@@ -771,14 +871,18 @@ def make_handler(app):
 
         def send(self, data, status=200, content_type='application/json'):
             body = data if isinstance(data, bytes) else json.dumps(data, ensure_ascii=False).encode()
-            self.send_response(status)
-            self.send_header('Content-Type', content_type + '; charset=utf-8')
-            self.send_header('Cache-Control', 'no-store')
-            self.send_header('X-Content-Type-Options', 'nosniff')
-            self.send_header('Content-Security-Policy', "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; frame-ancestors 'none'")
-            self.send_header('Content-Length', str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            try:
+                self.send_response(status)
+                self.send_header('Content-Type', content_type + '; charset=utf-8')
+                self.send_header('Cache-Control', 'no-store')
+                self.send_header('X-Content-Type-Options', 'nosniff')
+                self.send_header('Content-Security-Policy', "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; frame-ancestors 'none'")
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            except ConnectionError:
+                # Navigation can drop an in-flight polling request.
+                self.close_connection = True
 
         def do_GET(self):
             if self.headers.get('Host') != f'127.0.0.1:{self.server.server_port}':
@@ -856,10 +960,12 @@ def make_handler(app):
             try:
                 path = urlparse(self.path).path
                 source = _match_source(path)
-                limit = 48000 if source and source[1] == 'knowledge' else 20000
+                limit = 29 * 1024 * 1024 if path == '/api/sources/upload' else 48000 if source and source[1] == 'knowledge' else 20000
                 payload = self._json_body(limit)
                 if payload is None:
                     return None
+                if path == '/api/sources/upload':
+                    return self.send(app.upload_database(payload))
                 if source is not None and source[1] == 'knowledge':
                     if app.workspace_db is None:
                         return self.send({'error': 'Not found'}, 404)

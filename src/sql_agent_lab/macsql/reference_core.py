@@ -130,6 +130,7 @@ class ReferenceGraphAgent:
         self.models = dict(models)
         self.config = config
         self.grounding_block = ''
+        self.conversation_block = ''
         graph = StateGraph(WorkflowState)
         graph.add_node("select_schema", self._select)
         graph.add_node("decompose", self._decompose)

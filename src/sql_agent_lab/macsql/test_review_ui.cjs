@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const read = name => fs.readFileSync(path.join(__dirname, name + '.html'), 'utf8');
+const read = name => fs.readFileSync(path.join(__dirname, name + '.html'), 'utf8').replace(/\r\n/g, '\n');
 const pages = {analysis: read('analysis'), live_ui: read('live_ui')};
 for (const html of Object.values(pages)) new Function(html.match(/<script>([\s\S]*?)<\/script>/)[1]);
 const helper = html => html.match(/function reviewFailureLabel\(error\)\{[\s\S]*?\n\}/)[0];

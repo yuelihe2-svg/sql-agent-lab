@@ -12,6 +12,7 @@ $launchArgs = @('-B', '-m', 'sql_agent_lab.macsql.live_ui',
     '--output-dir', $settings.output_dir, '--port', "$Port")
 if ($settings.data_dir) { $launchArgs += @('--data-dir', $settings.data_dir) }
 if ($settings.sources) { $launchArgs += @('--sources', $settings.sources) }
+if ($settings.workspace_db) { $launchArgs += @('--workspace-db', $settings.workspace_db) }
 if ($settings.metadata) { $launchArgs += @('--metadata', $settings.metadata) }
 if ($settings.analysis_dir) { $launchArgs += @('--analysis-dir', $settings.analysis_dir) }
 if ($settings.history) { $launchArgs += @('--history', $settings.history) }

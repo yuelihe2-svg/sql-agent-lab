@@ -196,6 +196,6 @@ def test_profile_routes_stay_hidden_without_a_workspace(tmp_path, monkeypatch):
         assert client.post('/api/sources/shop/knowledge', json={
             'title': 'Rules', 'format': 'text', 'body': 'optional'}).status_code == 404
         assert client.get('/api/conversations').status_code == 404
-        assert 'SQL Agent Studio' in client.get('/workspace/').text
+        assert 'SQL 智能问答工作区' in client.get('/workspace/').text
     assert list(tmp_path.rglob('workspace.sqlite')) == []
     assert list(tmp_path.rglob('*-knowledge')) == []
