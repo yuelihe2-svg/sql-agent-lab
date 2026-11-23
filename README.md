@@ -182,3 +182,9 @@ New-Item -ItemType Directory -Force ../sql-agent-local | Out-Null
 打开终端给出的工作区地址，上传 SQLite 后可查看表结构、维护业务说明和浏览历史。需要让模型生成 SQL 时，启动本机 Ollama 服务，并执行 `ollama pull qwen3:4b-instruct` 安装模型。网页推理连接本机 `127.0.0.1:11434`。
 
 开始开发：`git switch -c feat/your-feature`，完成后推送自己的分支并提交目标为 `main` 的 PR。直接推送需要仓库管理员邀请 GitHub 账号；仓库链接本身不授予写权限。
+
+## PR 自动检查
+
+`.github/workflows/offline-checks.yml` 在面向 main 的 PR、main 推送和手动触发时运行 Windows / Python 3.13 / Node 22 检查。检查名称为 `Python and Node offline tests`，执行6组 Node 测试与完整 pytest，不下载模型、不调用 Ollama、不运行 benchmark 命令。安装锁定依赖需要包仓库网络；Python 测试由 conftest.py 阻断非测试服务器连接。工作流只有仓库只读权限，不使用仓库密钥。
+
+本地使用 `./check-offline.ps1` 复现；可用 `-Python` 指定解释器，`-BaseTemp` 指定仓库外尚不存在的临时目录。分支保护应在远程检查成功后，将上述检查名称配置为必需检查；仅有工作流文件不会阻止直接推送 main。
