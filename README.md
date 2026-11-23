@@ -155,7 +155,7 @@ node src/sql_agent_lab/macsql/test_user_ui.cjs
 
 ## 协作开发
 
-克隆 https://github.com/yuelihe2-svg/sql-agent-lab ，当前产品开发分支为 `docs/architecture-v1`。先阅读 `AGENTS.md`、本 README 和 `docs/chinese-acceptance.md`，再从产品分支建立自己的功能分支，通过 Pull Request 协作。不要提交数据库、模型、密钥、`.local/` 或运行记录。数据库与模型需每位协作者自行配置。
+克隆 https://github.com/yuelihe2-svg/sql-agent-lab ，当前集成分支为 `main`，`docs/architecture-v1` 的产品功能已合入。先阅读 `AGENTS.md`、本 README 和 `docs/chinese-acceptance.md`，再从最新 `main` 建立自己的功能分支，通过 Pull Request 协作。不要提交数据库、模型、密钥、`.local/` 或运行记录。数据库与模型需每位协作者自行配置。
 
 离线检查不需要模型。启动空工作区可使用：
 
@@ -164,3 +164,20 @@ node src/sql_agent_lab/macsql/test_user_ui.cjs
 ```
 
 打开 http://127.0.0.1:8782/workspace/ 后添加 SQLite 文件。本地推理使用 Ollama 的 `qwen3:4b-instruct`；启动网页本身不调用模型。当前定位为本机单用户开发版本，中文意图和追问识别仍有规则边界，不代表通用业务语义可靠性。
+
+新协作者快速启动（Windows PowerShell，Python 3.13；已安装 Git 和 Ollama）：
+
+```powershell
+git clone https://github.com/yuelihe2-svg/sql-agent-lab.git
+cd sql-agent-lab
+py -3.13 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements-lock.txt
+.\.venv\Scripts\python.exe -m pip install -e . --no-deps
+New-Item -ItemType Directory -Force ../sql-agent-local | Out-Null
+ollama pull qwen3:4b-instruct
+.\.venv\Scripts\python.exe -m sql_agent_lab.macsql.live_ui --workspace-db ../sql-agent-local/workspace.sqlite --output-dir ../sql-agent-local/runs --port 8782
+```
+
+先启动本机 Ollama 服务（若没有运行，在另一个终端执行 `ollama serve`）。`ollama pull` 仅用于下载本地模型；本项目网页推理连接本机 `127.0.0.1:11434`。访问 http://127.0.0.1:8782/workspace/ ，添加 SQLite 数据库即可提问。不使用模型时可以跳过模型下载，只运行离线测试。
+
+开始开发：`git switch -c feat/your-feature`，完成后推送自己的分支并提交目标为 `main` 的 PR。直接推送需要仓库管理员邀请 GitHub 账号；仓库链接本身不授予写权限。
