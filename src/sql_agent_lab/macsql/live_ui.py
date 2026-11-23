@@ -446,9 +446,15 @@ class Observatory:
         from sql_agent_lab.workspace.knowledge import read_knowledge
         return read_knowledge(self._workspace(), self.workspace_db, source_id, knowledge_id)
 
+    def _validate_metric_document(self, source_id, payload):
+        from sql_agent_lab.workspace.metric_definition import PAID_TOTAL_TITLE, PaidTotal
+        if str(payload.get('title', '')).strip() == PAID_TOTAL_TITLE:
+            PaidTotal.from_document(payload.get('format'), payload.get('body'), self.refresh_profile(source_id))
+
     def add_source_knowledge(self, source_id, payload):
         self._source_record(source_id)
         _reject_client_locations(payload)
+        self._validate_metric_document(source_id, payload)
         from sql_agent_lab.workspace.knowledge import create_knowledge
         return create_knowledge(
             self._workspace(), self.workspace_db, source_id,
@@ -457,6 +463,7 @@ class Observatory:
     def update_source_knowledge(self, source_id, knowledge_id, payload):
         self._source_record(source_id)
         _reject_client_locations(payload)
+        self._validate_metric_document(source_id, payload)
         from sql_agent_lab.workspace.knowledge import update_knowledge
         return update_knowledge(
             self._workspace(), self.workspace_db, source_id, knowledge_id,
@@ -718,7 +725,10 @@ class Observatory:
         if messages and not explicitly_starts_topic(text):
             previous = messages[-1]
             if runs[-1]['result']['needs_clarification']:
-                text = '原问题：' + previous['body'][:1000] + '\n用户补充：' + text
+                from sql_agent_lab.workspace.metric_definition import paid_total_year
+                retry_metric = paid_total_year(text) and paid_total_year(previous['body'])
+                if not retry_metric:
+                    text = '原问题：' + previous['body'][:1000] + '\n用户补充：' + text
         text, expected_sql = resolve_filter_followup(text, context['turns'])
         if text != question.question:
             # Derived state and clarification supplements share the history budget.
@@ -728,6 +738,22 @@ class Observatory:
                 datasource_id=question.db_id, question=text, history=history)
         emit({'event': 'conversation_context_attached', 'budget': context['budget']})
         return replace(question, question=text), context['history_block'], expected_sql
+
+    def _configured_paid_total(self, datasource_id, year):
+        from sql_agent_lab.workspace.answer_checks import NeedsClarification
+        from sql_agent_lab.workspace.metric_definition import PAID_TOTAL_TITLE, PaidTotal
+        documents = [doc for doc in self.list_source_knowledge(datasource_id)['knowledge']
+                     if doc['title'] == PAID_TOTAL_TITLE]
+        if not documents:
+            raise NeedsClarification('请在当前数据库的「数据库介绍」配置已付款订单总金额，或在问题中说明付款状态。')
+        if len(documents) != 1:
+            raise NeedsClarification('当前数据库有多份已付款订单总金额配置，请在「数据库介绍」中只保留一份。')
+        document = documents[0]
+        try:
+            metric = PaidTotal.from_document(document['format'], document['body'], self.refresh_profile(datasource_id))
+        except ValueError as error:
+            raise NeedsClarification('请更新当前数据库的已付款订单总金额配置。' + str(error)) from None
+        return metric.sql(year)
 
     def _work(self, run_id, question, reference, manifest):
         path = self.output / run_id
@@ -762,6 +788,8 @@ class Observatory:
                 emit({'event': 'grounding_skipped', 'grounding_enabled': False, 'model_call': False})
             history_block = ''
             expected_sql = None
+            initial_check = None
+            metric_sql = None
             if manifest.get('conversation_context_enabled'):
                 from sql_agent_lab.workspace.chat_intent import direct_answer
                 answer = direct_answer(question.question, lambda: self.refresh_profile(question.db_id),
@@ -769,8 +797,16 @@ class Observatory:
                 if answer:
                     result.update(status='completed', answer=answer)
                     return result
+                from sql_agent_lab.workspace.initial_query_checks import initial_intent
+                from sql_agent_lab.workspace.metric_definition import paid_total_year
+                original_text = question.question
                 question, history_block, expected_sql = self._prepare_followup(
                     manifest['conversation_id'], run_id, question, emit)
+                year = paid_total_year(question.question)
+                if year:
+                    metric_sql = self._configured_paid_total(question.db_id, year)
+                else:
+                    initial_check = initial_intent(original_text)
             if self.stop.is_set():
                 raise Stopped('Stopped before preparing the model')
             db = self.databases[question.db_id]
@@ -782,6 +818,18 @@ class Observatory:
             raw = SQLiteTools({question.db_id: db}, ToolLimits(timeout_seconds=30),
                               metadata=self.metadata, cancelled=self.stop.is_set)
             observed = ObservedTools(raw, emit, self.stop)
+            if metric_sql is not None:
+                feedback = observed.compile_sql_readonly(question.db_id, metric_sql)
+                if feedback['status'] == 'ok':
+                    feedback = observed.execute_sql_readonly(question.db_id, metric_sql)
+                emit({'event': 'configured_metric_executed', 'metric': 'paid_order_total', 'status': feedback['status']})
+                result.update(sql=metric_sql, feedback=feedback,
+                              status='completed' if feedback['status'] == 'ok' else 'failed')
+                return result
+            if initial_check:
+                from sql_agent_lab.workspace.initial_query_checks import supported_schema
+                if not supported_schema(initial_check[0], observed.load_schema(question.db_id)):
+                    initial_check = None
             with httpx.Client(base_url='http://127.0.0.1:11434', trust_env=False,
                               follow_redirects=False, timeout=600) as client:
                 model = LocalOllamaModel(client, 'qwen3:4b-instruct', 16384, num_threads=8, cpu_only=True)
@@ -809,6 +857,15 @@ class Observatory:
                         sql, feedback = expected_sql, None
                         # Workflow reports describe the discarded candidate.
                         latest.clear()
+                if initial_check:
+                    from sql_agent_lab.workspace.initial_query_checks import matches_initial_sql
+                    matches_initial = matches_initial_sql(*initial_check, sql)
+                    emit({'event': 'initial_sql_checked', 'intent': initial_check[0], 'matches': matches_initial})
+                    if not matches_initial:
+                        latest.clear()
+                        if initial_check[0] == 'paid_total':
+                            raise NeedsClarification('这次查询未能确认年份、已付款筛选和金额汇总，请核对条件后重试。')
+                        raise NeedsClarification('这次查询未能确认同一分类里的订单只计一次，请核对分类字段和订单编号后重试。')
                 if feedback is None:
                     feedback = observed.compile_sql_readonly(question.db_id, sql)
                     if feedback['status'] == 'ok':

@@ -1,0 +1,150 @@
+{
+  "sources": {
+    "shop": {
+      "name": "shop",
+      "setup": "CREATE TABLE orders(year INTEGER, status TEXT, amount INTEGER); INSERT INTO orders VALUES (2024,'paid',100), (2024,'paid',200), (2024,'cancelled',900), (2023,'paid',700);",
+      "metric": {
+        "table": "orders",
+        "year_column": "year",
+        "status_column": "status",
+        "amount_column": "amount",
+        "paid_value": "paid"
+      }
+    },
+    "archive": {
+      "name": "archive",
+      "setup": "CREATE TABLE sales(fiscal_year INTEGER, payment_code INTEGER, gross INTEGER); INSERT INTO sales VALUES (2024,1,1100), (2024,1,1200), (2024,0,1900), (2023,1,1700);",
+      "metric": {
+        "table": "sales",
+        "year_column": "fiscal_year",
+        "status_column": "payment_code",
+        "amount_column": "gross",
+        "paid_value": 1
+      }
+    },
+    "ledger": {
+      "name": "ledger（结算验收库）",
+      "setup": "CREATE TABLE \"结算单\"(\"年度\" TEXT, \"支付结果\" TEXT, \"应收小计\" INTEGER); INSERT INTO \"结算单\" VALUES ('2024','已结算',75), ('2024','已结算',50), ('2024','待结算',800), ('2023','已结算',60), ('2025','待结算',400);",
+      "metric": {
+        "table": "结算单",
+        "year_column": "年度",
+        "status_column": "支付结果",
+        "amount_column": "应收小计",
+        "paid_value": "已结算"
+      }
+    },
+    "unconfigured": {
+      "name": "未配置口径（验收库）",
+      "setup": "CREATE TABLE receipts(report_year INTEGER, payment TEXT, subtotal INTEGER); INSERT INTO receipts VALUES (2024,'settled',9900);"
+    }
+  },
+  "cases": [
+    {
+      "id": "shop-2024",
+      "source": "shop",
+      "question": "统计2024年已付款订单总金额",
+      "oracle_sql": "SELECT SUM(amount) FROM orders WHERE year=2024 AND status='paid'",
+      "rows": [
+        [
+          300
+        ]
+      ]
+    },
+    {
+      "id": "archive-2024",
+      "source": "archive",
+      "question": "统计2024年已付款订单总金额",
+      "oracle_sql": "SELECT SUM(gross) FROM sales WHERE fiscal_year=2024 AND payment_code=1",
+      "rows": [
+        [
+          2300
+        ]
+      ]
+    },
+    {
+      "id": "ledger-2024",
+      "source": "ledger",
+      "question": "统计2024年已付款订单总金额",
+      "oracle_sql": "SELECT SUM(\"应收小计\") FROM \"结算单\" WHERE \"年度\"='2024' AND \"支付结果\"='已结算'",
+      "rows": [
+        [
+          125
+        ]
+      ]
+    },
+    {
+      "id": "shop-2023",
+      "source": "shop",
+      "question": "统计2023年已付款订单总金额",
+      "oracle_sql": "SELECT SUM(amount) FROM orders WHERE year=2023 AND status='paid'",
+      "rows": [
+        [
+          700
+        ]
+      ]
+    },
+    {
+      "id": "archive-2023",
+      "source": "archive",
+      "question": "统计2023年已付款订单总金额",
+      "oracle_sql": "SELECT SUM(gross) FROM sales WHERE fiscal_year=2023 AND payment_code=1",
+      "rows": [
+        [
+          1700
+        ]
+      ]
+    },
+    {
+      "id": "ledger-2023",
+      "source": "ledger",
+      "question": "统计2023年已付款订单总金额",
+      "oracle_sql": "SELECT SUM(\"应收小计\") FROM \"结算单\" WHERE \"年度\"='2023' AND \"支付结果\"='已结算'",
+      "rows": [
+        [
+          60
+        ]
+      ]
+    },
+    {
+      "id": "ledger-null",
+      "source": "ledger",
+      "question": "统计2025年已付款订单总金额",
+      "oracle_sql": "SELECT SUM(\"应收小计\") FROM \"结算单\" WHERE \"年度\"='2025' AND \"支付结果\"='已结算'",
+      "rows": [
+        [
+          null
+        ]
+      ],
+      "summary_contains": [
+        "空值"
+      ]
+    },
+    {
+      "id": "ledger-clarify",
+      "source": "ledger",
+      "question": "看看去年销售情况",
+      "summary_contains": [
+        "销售总金额",
+        "订单数量",
+        "销售趋势"
+      ]
+    },
+    {
+      "id": "unconfigured-metric",
+      "source": "unconfigured",
+      "question": "统计2024年已付款订单总金额",
+      "summary_contains": [
+        "当前数据库",
+        "配置"
+      ]
+    },
+    {
+      "id": "archive-fresh-followup",
+      "source": "archive",
+      "question": "那杭州呢？",
+      "summary_contains": [
+        "当前没有可参考的查询"
+      ]
+    }
+  ]
+}

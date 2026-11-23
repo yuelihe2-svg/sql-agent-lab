@@ -10,6 +10,9 @@ _YEAR_CHANGE = re.compile(r'\s*(?:改成|换成|改为)([12][0-9]{3})年(?:呢)?
 
 
 def clarification(question, turns):
+    if re.fullmatch(r'\s*(?:请)?(?:帮我)?(?:看看|查询|查看|统计)(?:一下)?'
+                    r'(?:去年|今年|上个月|本月|[12][0-9]{3}年)的?销售(?:情况|表现)?[？?。！!]*\s*', question):
+        return '你想看销售总金额、订单数量，还是按月的销售趋势？'
     # A follow-up without an antecedent must not invent a metric or filters.
     usable = any(t.get('sql') for t in turns)
     if not usable and (_YEAR_CHANGE.fullmatch(question) or re.fullmatch(
