@@ -697,7 +697,8 @@ class Observatory:
 
     def _prepare_followup(self, conversation_id, run_id, question, emit):
         from sql_agent_lab.workspace.answer_checks import (
-            NeedsClarification, clarification, resolve_year_followup)
+            NeedsClarification, clarification)
+        from sql_agent_lab.workspace.query_state import resolve_filter_followup
         from sql_agent_lab.workspace.conversation_context import (
             build_conversation_context, explicitly_starts_topic, turns_from_public_records)
 
@@ -710,7 +711,6 @@ class Observatory:
             messages, datasource_id=question.db_id, runs=runs)
         context = build_conversation_context(conversation_id=conversation_id,
             datasource_id=question.db_id, question=question.question, history=history)
-        emit({'event': 'conversation_context_attached', 'budget': context['budget']})
         prompt = clarification(question.question, context['turns'])
         if prompt:
             raise NeedsClarification(prompt)
@@ -719,8 +719,15 @@ class Observatory:
             previous = messages[-1]
             if runs[-1]['result']['needs_clarification']:
                 text = '原问题：' + previous['body'][:1000] + '\n用户补充：' + text
-        text = resolve_year_followup(text, context['turns'])
-        return replace(question, question=text), context['history_block']
+        text, expected_sql = resolve_filter_followup(text, context['turns'])
+        if text != question.question:
+            # Derived state and clarification supplements share the history budget.
+            if len(text.encode('utf-8')) > context['budget']['limit']:
+                raise NeedsClarification('请补充完整条件：上一轮查询条件过长，请重新说明本次指标和筛选条件。')
+            context = build_conversation_context(conversation_id=conversation_id,
+                datasource_id=question.db_id, question=text, history=history)
+        emit({'event': 'conversation_context_attached', 'budget': context['budget']})
+        return replace(question, question=text), context['history_block'], expected_sql
 
     def _work(self, run_id, question, reference, manifest):
         path = self.output / run_id
@@ -754,6 +761,7 @@ class Observatory:
             else:
                 emit({'event': 'grounding_skipped', 'grounding_enabled': False, 'model_call': False})
             history_block = ''
+            expected_sql = None
             if manifest.get('conversation_context_enabled'):
                 from sql_agent_lab.workspace.chat_intent import direct_answer
                 answer = direct_answer(question.question, lambda: self.refresh_profile(question.db_id),
@@ -761,7 +769,7 @@ class Observatory:
                 if answer:
                     result.update(status='completed', answer=answer)
                     return result
-                question, history_block = self._prepare_followup(
+                question, history_block, expected_sql = self._prepare_followup(
                     manifest['conversation_id'], run_id, question, emit)
             if self.stop.is_set():
                 raise Stopped('Stopped before preparing the model')
@@ -792,9 +800,23 @@ class Observatory:
                     sql = agent.run(question)
                     if self.stop.is_set():
                         raise Stopped('Stopped after the scheduled operation completed')
-                    feedback = raw.compile_sql_readonly(question.db_id, sql)
+                    feedback = None
+                if expected_sql is not None:
+                    from sql_agent_lab.workspace.query_state import matches_followup_sql
+                    matches = matches_followup_sql(sql, expected_sql)
+                    emit({'event': 'followup_sql_checked', 'matches': matches})
+                    if not matches:
+                        sql, feedback = expected_sql, None
+                        # Workflow reports describe the discarded candidate.
+                        latest.clear()
+                if feedback is None:
+                    feedback = observed.compile_sql_readonly(question.db_id, sql)
                     if feedback['status'] == 'ok':
-                        feedback = raw.execute_sql_readonly(question.db_id, sql)
+                        feedback = observed.execute_sql_readonly(question.db_id, sql)
+                    if expected_sql is not None and not matches:
+                        emit({'event': 'followup_sql_repaired', 'status': feedback['status']})
+                        if feedback['status'] != 'ok':
+                            raise NeedsClarification('请补充完整条件：无法按上一轮口径完成这次查询，请重新说明指标和筛选条件。')
                 agent_latency_ms = round((time.perf_counter() - agent_started) * 1000, 1)
                 if self.stop.is_set():
                     raise Stopped('Stopped after the scheduled operation completed')

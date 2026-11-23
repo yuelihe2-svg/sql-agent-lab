@@ -118,3 +118,76 @@ def test_web_uses_the_actual_graph_result_without_reexecuting_sql(tmp_path, monk
     # A completed chat can display its usage without historical trace access.
     (app.output / run['id'] / 'trace.jsonl').unlink()
     assert app.conversation_detail(cid)['runs'][0]['result'] == run['result']
+
+
+@pytest.mark.parametrize('use_graph', [False, True])
+def test_explicit_filter_state_reaches_agent_and_is_scoped(tmp_path, monkeypatch, use_graph):
+    import sqlite3
+    from contextlib import closing
+    app = build(tmp_path, monkeypatch)
+    with closing(sqlite3.connect(app.databases['shop'])) as conn:
+        conn.execute('CREATE TABLE orders(year INTEGER, city TEXT, status TEXT, amount INTEGER)')
+        conn.executemany('INSERT INTO orders VALUES (?, ?, ?, ?)', [
+            (2024, '上海', 'paid', 100), (2024, '杭州', 'paid', 400),
+            (2023, '上海', 'paid', 700), (2023, '杭州', 'paid', 800),
+            (2023, '杭州', 'cancelled', 900)])
+        conn.commit()
+    select = "SELECT SUM(amount) FROM orders WHERE "
+    candidates = iter([
+        select + "year=2024 AND city='上海' AND status='paid'",
+        select + "city='杭州' AND status='paid'",  # Missing year.
+        select + "year=2023 AND status='paid'",   # Missing city.
+        select + "year=2023 AND city='杭州'",      # Missing status.
+    ])
+    seen = []
+    def behavior(config, question):
+        seen.append(question.question)
+        return next(candidates)
+    app.behavior = behavior
+    if use_graph:
+        from dataclasses import replace
+        calls = []
+        def model(**kwargs):
+            calls.append(kwargs['messages'])
+            sql = next(candidates)
+            return ModelReply('```sql\n' + sql + '\n```', 1, 1, simulated=True)
+        monkeypatch.setattr('sql_agent_lab.macsql.live_ui.ReferenceMacSQLAgent',
+                            lambda models, config: ReferenceMacSQLAgent(models, config=replace(config, model=model)))
+    cid = app.create_conversation({'datasource_id': 'shop'})['id']
+    def ask(conversation, text):
+        app.worker_done.clear()
+        app.post_conversation_message(conversation, {'question': text})
+        wait_done(app)
+        return app.conversation_detail(conversation)['runs'][-1]['result']
+    assert ask(cid, '统计2024年上海已付款订单总金额')['rows'] == [[100]]
+    repaired = ask(cid, '城市改成杭州')
+    assert repaired['rows'] == [[400]]
+    assert "city = '杭州'" in repaired['sql']
+    assert 'year = 2024' in repaired['sql']
+    if not use_graph:
+        assert "city = '杭州'" in seen[-1]
+        assert 'year = 2024' in seen[-1]
+    from sql_agent_lab.macsql.live_ui import Question
+    events = []
+    prepared, block, expected = app._prepare_followup(cid, 'no-current-run',
+        Question('custom', 'shop', '改成2023年'), events.append)
+    used = len(prepared.question.encode('utf-8')) + len(block.encode('utf-8'))
+    assert used == events[-1]['budget']['used']
+    assert used <= 1600
+    assert prepared.question.startswith('改成2023年')
+    assert "city = '杭州'" in expected
+    assert ask(cid, '改成2023年')['rows'] == [[800]]
+    assert ask(cid, '状态改成cancelled')['rows'] == [[900]]
+    fresh, block, expected = app._prepare_followup(cid, 'no-current-run',
+        Question('custom', 'shop', '新问题，列出所有城市'), events.append)
+    assert expected is None
+    assert fresh.question == '新问题，列出所有城市'
+    assert '上海' not in block
+    for source in ('shop', 'archive'):
+        other = app.create_conversation({'datasource_id': source})['id']
+        requests = calls if use_graph else seen
+        count = len(requests)
+        result = ask(other, '城市改成杭州')
+        assert result['needs_clarification']
+        assert result['sql'] is None
+        assert len(requests) == count

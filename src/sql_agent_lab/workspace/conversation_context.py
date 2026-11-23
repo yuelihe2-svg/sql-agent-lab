@@ -191,7 +191,10 @@ def _prepare_turn(item, scope):
     sql = None
     sql_truncated = False
     if not failed:
-        sql, sql_truncated = _clip(_redact(item.get('sql')), SQL_LIMIT)
+        # Keep whitespace inside SQL literals and line endings after comments.
+        sql = _redact(item.get('sql')).strip()
+        sql_truncated = len(sql) > SQL_LIMIT
+        sql = sql[:SQL_LIMIT]
         if sql == '':
             sql = None
     truncated = bool(item.get('truncated') or item.get('has_more') or text_truncated or sql_truncated)
