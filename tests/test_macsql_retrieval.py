@@ -32,6 +32,23 @@ def make_tools(database):
     return SQLiteTools({'school': database}, ToolLimits(timeout_seconds=2), metadata=docs)
 
 
+def test_profile_and_agent_share_generated_columns_and_handle_binary_samples(database):
+    from sql_agent_lab.workspace.profile import extract_profile
+    with sqlite3.connect(database) as conn:
+        conn.execute('CREATE TABLE sqliteOrders (qty INT, price INT, '
+                     'total INT GENERATED ALWAYS AS (qty * price), receipt BLOB)')
+        conn.execute('INSERT INTO sqliteOrders(qty, price, receipt) VALUES (2, 3, ?)', (bytes([255]),))
+        conn.execute('CREATE VIRTUAL TABLE articles USING fts5(title, body)')
+    tools = make_tools(database)
+    schema = tools.load_schema('school', enrich=True)
+    assert set(schema['articles']['columns']) == {'title', 'body'}
+    assert not any(name.startswith('articles_') for name in schema)
+    profile = next(t for t in extract_profile(database)['tables'] if t['name'] == 'sqliteOrders')
+    assert list(schema['sqliteOrders']['columns']) == [c['name'] for c in profile['columns']]
+    assert schema['sqliteOrders']['columns']['receipt']['observed_samples'] == ['[BLOB]']
+    assert tools.execute_sql_readonly('school', 'SELECT total FROM sqliteOrders')['preview_rows'] == [[6]]
+
+
 def test_fts_finds_documented_column_and_value_lookup_escapes_wildcards(database):
     tools = make_tools(database)
     hits = tools.search_schema('school', 'Which school has the highest average mathematics score?')
@@ -50,6 +67,16 @@ def test_hints_quote_sql_identifiers_with_spaces_and_punctuation():
                              'description': 'Meal count'}], [])
     assert '"frpm"."FRPM Count (K-12)"' in hint
     assert 'double quotes' in hint
+
+
+def test_short_binary_and_infinite_real_have_json_safe_previews(database):
+    import json
+    tools = make_tools(database)
+    view = tools.execute_sql_readonly('school', "SELECT x'ff', 1e999")
+    assert view['preview_rows'] == [['0xff', 'inf']]
+    assert view['truncated'] is False
+    assert view['output_type_profile']['columns'][1]['storage_classes'] == {'real': 1}
+    json.dumps(view, allow_nan=False)
 
 
 def test_retrieval_hints_enter_decomposer_without_changing_role_order(database):

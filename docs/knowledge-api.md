@@ -8,7 +8,7 @@ Knowledge is optional user text. `verification` is always `user_provided_unverif
 
 ## GET /api/sources/{datasource_id}/profile
 
-Refreshes the profile from the registered SQLite file and saves it.
+Reads the current schema version from the registered SQLite file. When the file identity, size, modification time or schema version changes, the service refreshes and saves the profile. Otherwise it returns the cached extraction and its original timestamp.
 
 ```json
 {
@@ -54,7 +54,7 @@ The response adds `id`, `version` (starting at 1), `content_hash`, `provenance` 
 
 ## PUT /api/sources/{datasource_id}/knowledge/{id}
 
-Same body as create. Each successful update increments `version`. The hash changes only when the body changes.
+The update accepts the create fields and an optional integer `expected_version`. Studio supplies the version loaded by the editor. A stale edit returns HTTP 400 and leaves the newer document available. Each successful update increments `version`. Content hashes cover the exact UTF-8 body, including its line endings.
 
 ## DELETE /api/sources/{datasource_id}/knowledge/{id}
 
@@ -82,7 +82,9 @@ Knowledge create, update, and delete write the same title and body into `knowled
 
 ## Conversation grounding
 
-`POST /api/conversations/{id}/messages` accepts an optional boolean `use_grounding`. Omitting it, or sending `false`, keeps the previous execution path and does not call grounding retrieval. Optional `retrieval_strategy` is read only when grounding is on. Omitting it uses `keyword`.
+`POST /api/conversations/{id}/messages` enables grounding by default. Send `use_grounding: false` to skip retrieval. Ordinary `POST /api/start` requests enable grounding only when explicitly requested. The default strategy is `keyword`.
+
+Keyword retrieval also compares overlapping three-character Chinese fragments. For example, a question containing 有多少活跃订单 can retrieve a definition containing 活跃订单是指已支付的订单. Long excerpts are centered near matching terms. The in-process cache keeps up to 128 results.
 
 `true` retrieves the bound data source only, builds a bounded untrusted reference block, and appends that block after the existing role prompt. The Selector, Decomposer, and Refiner prompt text is unchanged. User knowledge stays labeled unverified and cannot override system rules. The saved run records matched names, knowledge ids, versions, hashes, the schema fingerprint, context size, and retrieval latency. It does not record an API cost unless a real price is available. Grounding evidence does not prove that the SQL is correct.
 
@@ -93,12 +95,11 @@ Returns one document. A missing file or a file that does not match its hash is a
 ## Optional conversation history
 
 Conversation message requests accept a boolean field named
-`use_conversation_context`. It defaults to false. The workspace checkbox
-**Use conversation history** applies to the current request.
+`use_conversation_context`. Workspace messages enable it by default. An API caller can set it to false for a single message.
 
 When enabled, the server builds a separate untrusted history block before
 Agent execution using public results from earlier runs in the same conversation
-and data source. The current run is excluded. The default budget is 1600 UTF-8
+and data source. The server considers the latest 32 earlier message/run pairs. An explicit new topic resets the history used by later follow-ups. The default budget is 1600 UTF-8
 bytes including the current question. The current question is always retained.
 Oldest turns are removed first, then historical SQL is removed when necessary.
 Failed runs contribute no SQL. ContextPolicy checks the full model input after

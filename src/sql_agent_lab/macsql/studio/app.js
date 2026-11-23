@@ -111,6 +111,27 @@
     if (typeof value === 'boolean') return { text: value ? 'true' : 'false', nullish: false };
     return { text: String(value), nullish: false };
   }
+
+  function resultCsv(columns, rows) {
+    function field(value) {
+      let text = value == null ? 'NULL' : String(value);
+      if (typeof value === 'string' && (/^\s*[=+@-]/u.test(text) || /^[\t\r\n]/u.test(text))) {
+        text = "'" + text;
+      }
+      return '"' + text.replace(/"/g, '""') + '"';
+    }
+    return '\uFEFF' + [columns, ...rows].map(row => row.map(field).join(',')).join('\r\n') + '\r\n';
+  }
+
+  function downloadResult(doc, item) {
+    const blob = new Blob([resultCsv(item.columns, item.rows)], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = el(doc, 'a');
+    link.href = url;
+    link.download = (item.complete ? '查询结果-' : '结果预览-') + item.id + '.csv';
+    link.click();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
   function sourceById(sources, id) {
     return (sources || []).find(function (source) { return source.id === id; }) || null;
   }
@@ -178,6 +199,12 @@
     } else if (item.preview) {
       article.append(el(doc, 'p', 'table-note', caption(item)));
     }
+    if (item.preview && item.columns.length) {
+      const download = el(doc, 'button', 'text-action', item.complete ? '下载结果 CSV' : '下载预览 CSV');
+      download.type = 'button';
+      download.addEventListener('click', function () { downloadResult(doc, item); });
+      article.append(download);
+    }
     if (item.sql) {
       const show = el(doc, 'button', 'text-action', '显示这条 SQL');
       show.type = 'button';
@@ -213,6 +240,7 @@
     nodes.banner.textContent = state.notice || '';
 
     nodes.newer.disabled = !state.workspace || !source || navigationLocked;
+    nodes.addSource.disabled = !state.workspace || navigationLocked || Boolean(state.activeRunId);
     nodes.overviewButton.disabled = !state.workspace || !source || navigationLocked;
     nodes.overviewButton.textContent = state.view === 'overview' ? '返回对话' : '数据库介绍';
     nodes.error.hidden = !state.error;
@@ -310,7 +338,8 @@
     nodes.threadConversation = conversationId;
     thread.replaceChildren();
     if (!state.workspace || !state.sources.length) {
-      nodes.thread.append(el(doc, 'div', 'empty-thread', state.notice || '工作区还不能保存会话。'));
+      const message = state.workspace ? '点击左侧「添加数据库」，选择 SQLite 文件后即可开始提问。' : '工作区还不能保存会话。';
+      nodes.thread.append(el(doc, 'div', 'empty-thread', state.notice || message));
     } else if (!conversation) {
       const empty = el(doc, 'div', 'empty-thread');
       empty.append(
@@ -385,9 +414,12 @@
     const question = selected ? previousUser(turns, selected.id) : '';
     nodes.detailSource.textContent = source ? source.name : '';
     nodes.detailQuestion.textContent = question || '选择一条回答以查看对应问题。';
-    nodes.sql.textContent = selected && selected.sql ? selected.sql : '本次问题暂无 SQL。';
+    const sqlText = selected && selected.sql ? selected.sql : '本次问题暂无 SQL。';
+    if (nodes.sql.textContent !== sqlText) nodes.copyStatus.textContent = '';
+    nodes.sql.textContent = sqlText;
+    nodes.copySql.disabled = !selected || !selected.sql;
     nodes.runState.textContent = selected
-      ? statusLabel(selected.state) + (selected.evaluated ? ' · Evaluated' : ' · Not evaluated')
+      ? statusLabel(selected.state) + (selected.evaluated ? ' · 已评测' : ' · 未评测')
       : '尚未选择查询';
     nodes.tokenIn.textContent = formatTokens(selected && selected.tokens ? selected.tokens.input : null);
     nodes.tokenOut.textContent = formatTokens(selected && selected.tokens ? selected.tokens.output : null);
@@ -623,6 +655,7 @@
       event.preventDefault();
       handlers.saveKnowledge({
         id: draft.id,
+        version: draft.version,
         title: title.value,
         format: format.value,
         body: body.value
@@ -791,7 +824,7 @@
           const reader = new FileReader(); reader.onload = function () { resolve(reader.result.split(',')[1]); }; reader.onerror = reject; reader.readAsDataURL(file.files[0]);
         });
         const result = await request('/api/sources/upload', { name: nameInput.value, description: description.value, data: data });
-        const catalog = await request('/api/catalog'); state.sources = publicSources(catalog);
+        state.sources = publicSources({ sources: state.sources.concat(result.source) });
         state.workspace = true; state.notice = ''; upload.close(); uploadForm.reset();
         handlers.newConversation(result.source.id);
       } catch (error) { uploadError.textContent = error.message || '添加失败，请重试'; }
@@ -870,7 +903,20 @@
     const sqlBlock = el(doc, 'div', 'detail-block');
     const sql = el(doc, 'pre', 'sql');
     sql.translate = false;
-    sqlBlock.append(el(doc, 'h2', null, 'SQL'), sql);
+    const copySql = el(doc, 'button', 'text-action', '复制 SQL');
+    copySql.type = 'button';
+    const copyStatus = el(doc, 'span', 'quiet');
+    copyStatus.setAttribute('role', 'status');
+    copySql.addEventListener('click', async function () {
+      const text = sql.textContent;
+      try {
+        await navigator.clipboard.writeText(text);
+        if (sql.textContent === text) copyStatus.textContent = '已复制';
+      } catch {
+        if (sql.textContent === text) copyStatus.textContent = '请选中上方 SQL 手动复制';
+      }
+    });
+    sqlBlock.append(el(doc, 'h2', null, 'SQL'), sql, copySql, copyStatus);
     const stateBlock = el(doc, 'div', 'detail-block');
     stateBlock.append(el(doc, 'h2', null, '执行状态'), el(doc, 'p'));
     const metricBlock = el(doc, 'div', 'detail-block');
@@ -904,8 +950,8 @@
       details: details, toggle: toggle, title: title, subtitle: subtitle, banner: banner,
       sourceList: sourceList, talkList: talkList, thread: thread, runHint: runHint, error: error,
       historyInput: historyInput, send: send, live: live, form: form, question: question, strategy: strategy,
-      newer: newer, overviewButton: overviewButton, detailSource: sourceBlock.querySelector('p'),
-      detailQuestion: questionBlock.querySelector('p'), sql: sql,
+      newer: newer, addSource: addSource, overviewButton: overviewButton, detailSource: sourceBlock.querySelector('p'),
+      detailQuestion: questionBlock.querySelector('p'), sql: sql, copySql: copySql, copyStatus: copyStatus,
       runState: stateBlock.querySelector('p'), tokenIn: tokenIn, tokenOut: tokenOut,
       duration: duration, usageNote: usageNote, trace: trace,
       groundingInput: groundingInput, groundingNote: groundingNote, groundingStatus: groundingStatus
@@ -1041,11 +1087,9 @@
           state.conversations = [];
           if (error.status !== 404) throw error;
         }
-        if (!state.sources.length) {
-          state.notice = '尚未接入数据源。请在启动命令里用 --sources 注册只读 SQLite，然后刷新此页。';
-        } else if (!state.workspace) {
+        if (!state.workspace) {
           state.notice = '未启用工作区。请带 --workspace-db 重新启动后刷新。当前不会把演示数据当成查询结果。';
-        } else {
+        } else if (state.sources.length) {
           state.notice = '';
           const params = new URLSearchParams(options && options.search != null ? options.search : (typeof location !== 'undefined' ? location.search : ''));
           const requestedSource = params.get('datasource');
@@ -1157,7 +1201,7 @@
         navigate(function () { return openConversation(id); });
       },
       edit: function (item) {
-        state.draft = { id: item.id, title: item.title, format: item.format, body: item.body };
+        state.draft = { id: item.id, version: item.version, title: item.title, format: item.format, body: item.body };
         paint();
       },
       remove: function (item) {
@@ -1174,7 +1218,8 @@
           const path = draft.id
             ? '/api/sources/' + id + '/knowledge/' + encodeURIComponent(draft.id)
             : '/api/sources/' + id + '/knowledge';
-          await request(path, { title: draft.title.trim(), format: draft.format, body: draft.body }, draft.id ? 'PUT' : 'POST');
+          await request(path, { title: draft.title.trim(), format: draft.format, body: draft.body,
+            expected_version: draft.version }, draft.id ? 'PUT' : 'POST');
           state.draft = null;
           await loadOverview();
         });
@@ -1273,6 +1318,7 @@
     pairTurns: pairTurns,
     caption: caption,
     cellText: cellText,
+    resultCsv: resultCsv,
     formatElapsed: formatElapsed,
     formatTokens: formatTokens,
     statusLabel: statusLabel,

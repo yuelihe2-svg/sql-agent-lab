@@ -1,9 +1,10 @@
 """SQLite tools: trusted database binding, bounded previews, full-set scoring."""
 
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 import re
+import math
 import sqlite3
 import time
 
@@ -14,6 +15,21 @@ class EvaluationLimitExceeded(RuntimeError):
 
 def quote_identifier(name):
     return '"' + name.replace('"', '""') + '"'
+
+
+def user_tables(conn):
+    listed = conn.execute('PRAGMA main.table_list')
+    if listed.description:
+        return sorted(row[1] for row in listed if row[2] in ('table', 'virtual')
+                      and not row[1].startswith('sqlite_'))
+    # Older SQLite builds do not expose the table/shadow distinction.
+    return [row[0] for row in conn.execute(
+        "SELECT name FROM sqlite_schema WHERE type='table' AND name NOT GLOB 'sqlite_*' ORDER BY name")]
+
+
+def visible_columns(conn, table):
+    # table_xinfo includes generated columns. Flag 1 marks virtual-table internals.
+    return [row for row in conn.execute(f'PRAGMA table_xinfo({quote_identifier(table)})') if row[6] != 1]
 
 
 @dataclass(frozen=True)
@@ -38,12 +54,13 @@ class ToolLimits:
 
 
 class SQLiteTools:
-    def __init__(self, databases: dict[str, Path], limits=ToolLimits(), *, metadata=None):
+    def __init__(self, databases: dict[str, Path], limits=ToolLimits(), *, metadata=None, cancelled=None):
         self.databases = {key: Path(path).resolve(strict=True) for key, path in databases.items()}
         if not self.databases or any(not path.is_file() for path in self.databases.values()):
             raise ValueError("Bind existing database files before running the workflow")
         self.limits = limits
         self.metadata = metadata or {}
+        self.cancelled = cancelled
 
     @contextmanager
     def connection(self, db_id, *, query=False, strict_identifiers=False,
@@ -63,7 +80,9 @@ class SQLiteTools:
             conn.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, self.limits.max_value_bytes)
             conn.setlimit(sqlite3.SQLITE_LIMIT_SQL_LENGTH, self.limits.max_sql_chars)
             deadline = time.monotonic() + timeout
-            conn.set_progress_handler(lambda: int(time.monotonic() > deadline), 100)
+            def should_interrupt():
+                return time.monotonic() > deadline or (self.cancelled is not None and self.cancelled())
+            conn.set_progress_handler(should_interrupt, 100)
             if query:
                 allowed = {sqlite3.SQLITE_SELECT, sqlite3.SQLITE_READ,
                            sqlite3.SQLITE_FUNCTION, sqlite3.SQLITE_RECURSIVE}
@@ -84,13 +103,9 @@ class SQLiteTools:
 
     def load_schema(self, db_id, *, enrich=False, sample_values=True):
         with self.connection(db_id) as conn:
-            tables = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' "
-                "AND name NOT LIKE 'sqlite_%' ORDER BY name"
-            ).fetchall()
             schema = {}
-            for (name,) in tables:
-                columns = conn.execute(f"PRAGMA table_info({quote_identifier(name)})").fetchall()
+            for name in user_tables(conn):
+                columns = visible_columns(conn, name)
                 fks = conn.execute(f"PRAGMA foreign_key_list({quote_identifier(name)})").fetchall()
                 schema[name] = {
                     "columns": {c[1]: {"type": c[2], "pk": bool(c[5])} for c in columns},
@@ -108,8 +123,9 @@ class SQLiteTools:
             # Bound each SQLite value before transfer into Python. Prefix samples
             # are explicitly incomplete and must not be treated as enumerations.
             projections = ",".join(
-                f"substr(CAST({quote_identifier(c)} AS TEXT),1,{self.limits.cell_chars + 1})"
-                for c in columns)
+                f"CASE WHEN typeof({ident}) = 'blob' THEN '[BLOB]' "
+                f"ELSE substr(CAST({ident} AS TEXT),1,{self.limits.cell_chars + 1}) END"
+                for ident in map(quote_identifier, columns))
             rows = (conn.execute(f"SELECT {projections} FROM {quote_identifier(table)} "
                                 f"LIMIT {self.limits.sample_scan_rows}").fetchall() if sample_values else [])
             for index, column in enumerate(columns):
@@ -162,7 +178,7 @@ class SQLiteTools:
         if not terms:
             return []
         try:
-            with sqlite3.connect(':memory:') as index:
+            with closing(sqlite3.connect(':memory:')) as index:
                 index.execute('CREATE VIRTUAL TABLE docs USING fts5('
                               'table_name UNINDEXED, column_name UNINDEXED, '
                               'names, description, examples)')
@@ -305,8 +321,9 @@ class SQLiteTools:
                 def short(value):
                     nonlocal truncated
                     if isinstance(value, bytes):
-                        value = "0x" + value[:limits.cell_chars].hex()
-                        truncated = True
+                        value = '0x' + value[:limits.cell_chars].hex()
+                    if isinstance(value, float) and not math.isfinite(value):
+                        return str(value)
                     if isinstance(value, str) and len(value) > limits.cell_chars:
                         truncated = True
                         return value[:limits.cell_chars] + "…"

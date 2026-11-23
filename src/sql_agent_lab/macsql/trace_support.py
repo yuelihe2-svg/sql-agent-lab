@@ -3,6 +3,26 @@ from datetime import datetime, timezone
 import time
 
 
+def token_totals(events):
+    """Missing usage in any finished call makes the aggregate unknown."""
+    incoming = outgoing = started = finished = 0
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        if event.get('event') == 'call_started':
+            started += 1
+        if event.get('event') not in ('call_completed', 'call_failed'):
+            continue
+        counts = event.get('input_tokens'), event.get('output_tokens')
+        if event.get('usage_complete') is False or any(type(n) is not int or n < 0 for n in counts):
+            return {'input': None, 'output': None}
+        incoming += counts[0]
+        outgoing += counts[1]
+        finished += 1
+    known = finished > 0 and started <= finished
+    return {'input': incoming if known else None, 'output': outgoing if known else None}
+
+
 def failure_category(code='', message=''):
     value = str(code).casefold()
     if value in ('output_truncated', 'length'):
@@ -77,8 +97,10 @@ class TraceEmitter:
     def __call__(self, event):
         self.sequence += 1
         category = event_category(event)
-        self.writer({**event, **({'diagnostic_category': category} if category else {}),
+        record = {**event, **({'diagnostic_category': category} if category else {}),
             'trace_schema_version':3,'run_id':self.run_id,
             'question_id':self.question_id,'event_sequence':self.sequence,
             'timestamp':datetime.now(timezone.utc).isoformat(),
-            'elapsed':time.monotonic()-self.started})
+            'elapsed':time.monotonic()-self.started}
+        self.writer(record)
+        return record

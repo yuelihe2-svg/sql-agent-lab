@@ -70,6 +70,18 @@ def test_render_bounds_untrusted_text_and_skips_missing_documents():
     assert 'drop table' not in text.split('User-provided knowledge')[0]
 
 
+def test_grounding_budget_reports_only_evidence_delivered_to_the_model():
+    docs = [{'id': f'k{i}', 'version': 1, 'title': f'术语{i}', 'content_hash': 'x' * 64,
+             'excerpt': '计价规则' * 100} for i in range(5)]
+    tables = [{'name': '非常长的表名' * 300, 'columns': []}, {'name': 'orders', 'columns': []}]
+    block, summary = render_grounding({'system_rules': 'not_overridable', 'tables': tables, 'knowledge': docs})
+    assert len(block) <= 1600 and summary['context_truncated']
+    assert summary['matched_tables'] == ['orders']
+    assert 0 < len(summary['knowledge']) < len(docs)
+    assert [doc['id'] for doc in summary['knowledge']] == [d['id'] for d in docs if 'DATA id=' + d['id'] in block]
+    assert '计价规则' in block
+
+
 def test_conversation_grounding_is_explicit_and_isolated(tmp_path, monkeypatch):
     from sql_agent_lab.workspace import retrieval
     retrieval._CACHE.clear()

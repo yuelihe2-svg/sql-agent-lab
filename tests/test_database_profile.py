@@ -53,6 +53,43 @@ def test_profile_reads_keys_without_copying_rows_or_paths(tmp_path):
     assert extract_profile(database)['fingerprint'] == first['fingerprint']
 
 
+def test_implicit_composite_foreign_keys_can_be_used_in_grounding(tmp_path):
+    from sql_agent_lab.workspace.grounding_context import render_grounding
+    from sql_agent_lab.workspace.profile import extract_profile
+    from sql_agent_lab.workspace.retrieval import ground
+    database = tmp_path / 'implicit.sqlite'
+    with closing(sqlite3.connect(database)) as conn:
+        conn.executescript('CREATE TABLE parent (a INT, b INT, PRIMARY KEY (b, a));'
+                           'CREATE TABLE child (x INT, y INT, FOREIGN KEY(x,y) REFERENCES Parent);')
+    profile = extract_profile(database)
+    assert profile['relationships'][0]['to_columns'] == ['b', 'a']
+    bundle = ground('local', profile, [], 'parent child', cache={})
+    assert 'parent.b,a' in render_grounding(bundle)[0]
+
+
+def test_repeated_profile_reads_reuse_catalog_and_invalidate_on_wal_change(tmp_path, monkeypatch):
+    from sql_agent_lab.workspace import profile
+    app = build(tmp_path, monkeypatch)
+    calls = []
+    original = profile._table
+    def counted(conn, table):
+        calls.append(table)
+        return original(conn, table)
+    monkeypatch.setattr(profile, '_table', counted)
+    with closing(sqlite3.connect(app.databases['shop'])) as writer:
+        writer.execute('PRAGMA journal_mode=WAL')
+        first = app.refresh_profile('shop')
+        first['tables'].clear()
+        second = app.refresh_profile('shop')
+        assert second['tables'] and first['extracted_at'] == second['extracted_at']
+        assert calls == ['numbers']
+        writer.execute('ALTER TABLE numbers ADD COLUMN currency TEXT')
+        writer.commit()
+        third = app.refresh_profile('shop')
+        assert third['fingerprint'] != second['fingerprint']
+        assert calls == ['numbers', 'numbers']
+
+
 def test_version_one_store_upgrades_in_place(tmp_path):
     path = tmp_path / 'workspace.sqlite'
     with closing(_connect(path)) as conn:

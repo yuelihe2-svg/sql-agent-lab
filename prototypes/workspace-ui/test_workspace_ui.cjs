@@ -170,4 +170,10 @@ assert.equal(studio.groundingControl(false).note.includes('工作区'), true);
 assert.equal(studio.groundingControl(true).enabled, true);
 assert.equal(studio.groundingControl(true).label, '使用数据库依据');
 
+const csv = studio.resultCsv(['产品', '说明', '金额'], [
+  ['收纳,盒', '两行\r\n"文字"', -1.25], ['=价格', null, 0], ['', '@客户', '9223372036854775807']
+]);
+assert.equal(csv, '\uFEFF"产品","说明","金额"\r\n"收纳,盒","两行\r\n""文字""","-1.25"\r\n' +
+  '"\'=价格","NULL","0"\r\n"","\'@客户","9223372036854775807"\r\n');
+assert.equal(studio.resultCsv(['列'], []), '\uFEFF"列"\r\n');
 console.log('workspace ui checks passed');

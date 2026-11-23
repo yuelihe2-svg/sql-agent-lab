@@ -37,6 +37,26 @@ def test_stop_prevents_next_tool_call(tmp_path):
     assert events == []
 
 
+def test_sqlite_progress_can_stop_a_query_without_starting_a_repair(tmp_path):
+    from contextlib import closing
+    path = tmp_path / 'numbers.sqlite'
+    with closing(sqlite3.connect(path)) as conn:
+        conn.execute('CREATE TABLE numbers(n INTEGER)')
+        conn.executemany('INSERT INTO numbers VALUES (?)', [(i,) for i in range(1000)])
+        conn.commit()
+    stop = threading.Event()
+    def cancel_in_progress():
+        stop.set()
+        return True
+    raw = SQLiteTools({'db': path}, cancelled=cancel_in_progress)
+    events = []
+    observed = ObservedTools(raw, events.append, stop)
+    with pytest.raises(Stopped):
+        observed.execute_sql_readonly('db', 'SELECT SUM(n) FROM numbers')
+    assert [e['event'] for e in events] == ['tool_started', 'tool_failed']
+    assert SQLiteTools({'db': path}).execute_sql_readonly('db', 'SELECT COUNT(*) FROM numbers')['preview_rows'] == [[1000]]
+
+
 def test_browser_write_endpoints_reject_foreign_origin_and_invalid_body():
     server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(object()))
     thread = threading.Thread(target=server.serve_forever, daemon=True)

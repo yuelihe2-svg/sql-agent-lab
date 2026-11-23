@@ -28,7 +28,9 @@ async function checks(){
   assert.equal(get('evaluation').textContent,'未评测');
   const wrong=run();wrong.result.score=0;c.renderRun(wrong);
   assert.equal(get('status').textContent,'已完成');assert.equal(get('evaluation').textContent,'评测未通过');
-  const empty=run();empty.result.feedback.preview_rows=[];c.renderTable(empty.result);assert.match(get('tableWrap').children[0].textContent,/没有匹配/);
+  const empty=run();empty.result.feedback.preview_rows=[];c.renderTable(empty.result);assert.match(get('tableWrap').children[0].textContent,/预览/);
+  Object.assign(empty.result.feedback,{has_more:false,truncated:false});
+  c.renderTable(empty.result);assert.match(get('tableWrap').children[0].textContent,/没有匹配/);
   const fail=run('failed','failed');fail.result={status:'failed',error:'no such column: demo'};c.renderRun(fail);
   assert.match(get('answerText').textContent,/未找到对应/);assert.equal(get('technicalError').hidden,false);
 
@@ -66,7 +68,7 @@ async function checks(){
   // If selection changes while an old detail request is in flight, only the new one renders.
   let release,entered;const seen=new Promise(r=>{entered=r;});const rendered=[];
   c.renderRun=value=>rendered.push(value.id);
-  c.api=async url=>{if(url==='/api/runs')return {active:null,runs:[]};if(url.endsWith('=a'))return new Promise(resolve=>{release=resolve;entered();});return run('b');};
+  c.api=async url=>{if(url==='/api/user/runs')return {active:null,runs:[]};if(url.endsWith('=a'))return new Promise(resolve=>{release=resolve;entered();});return run('b');};
   c.setSelection('a');const first=c.refresh();await seen;c.setSelection('b');release(run('a'));await first;await new Promise(setImmediate);
   assert.deepEqual(rendered,['b']);
 
@@ -82,7 +84,7 @@ async function checks(){
   const {context:e}=setup();let oldDetail,detailEntered,stopped=false;const detailSeen=new Promise(r=>{detailEntered=r;});const states=[];
   e.setSelection('stop-me');vm.runInContext("state.run={active:true,task:{state:'running'}};",e);
   e.renderRun=value=>states.push(value.task.state);
-  e.api=async(url,payload)=>{if(url==='/api/stop'){assert.equal(payload.id,'stop-me');stopped=true;return {status:'stop_requested'};}if(url==='/api/runs')return {active:'stop-me',runs:[]};if(stopped)return {id:'stop-me',task:{state:'stopping'}};return new Promise(resolve=>{oldDetail=resolve;detailEntered();});};
+  e.api=async(url,payload)=>{if(url==='/api/stop'){assert.equal(payload.id,'stop-me');stopped=true;return {status:'stop_requested'};}if(url==='/api/user/runs')return {active:'stop-me',runs:[]};if(stopped)return {id:'stop-me',task:{state:'stopping'}};return new Promise(resolve=>{oldDetail=resolve;detailEntered();});};
   const poll=e.refresh();await detailSeen;await e.stopQuery();oldDetail({id:'stop-me',task:{state:'running'}});await poll;await new Promise(setImmediate);
   assert.deepEqual(states,['stopping']);
   console.log('User UI: view switching, literal results, empty/error states, usage, submit/stop and poll races passed');

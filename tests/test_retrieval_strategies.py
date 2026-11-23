@@ -53,7 +53,7 @@ def test_knowledge_probes_do_not_treat_lexical_misses_as_semantic_search():
     assert rows['title-rank']['strategies']['keyword']['knowledge_ids'][0] == 'body-paid'
     chinese = rows['chinese-unsegmented']
     assert chinese['chinese_semantic_search'] is False
-    assert chinese['strategies']['keyword']['knowledge_ids'] == []
+    assert chinese['strategies']['keyword']['knowledge_ids'] == ['active-zh']
     assert chinese['strategies']['bm25']['knowledge_ids'] == []
     assert rows['chinese-exact']['strategies']['keyword']['hit'] is True
     assert rows['chinese-exact']['strategies']['bm25']['hit'] is True
