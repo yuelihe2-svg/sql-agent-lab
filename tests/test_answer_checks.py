@@ -21,3 +21,12 @@ def test_query_basis_explains_top_groups():
     assert '全部记录' not in basis
     for part in ('GROUP BY', 'HAVING', 'ORDER BY', 'DESC', 'LIMIT 10', 'OFFSET 2'):
         assert part in basis
+
+
+def test_year_followup_preserves_group_order_and_limit():
+    from sql_agent_lab.workspace.answer_checks import resolve_year_followup
+    sql = "SELECT city, SUM(amount) FROM orders WHERE year='2024' GROUP BY city HAVING SUM(amount)>5 ORDER BY SUM(amount) DESC LIMIT 3 OFFSET 1"
+    resolved = resolve_year_followup('改成2023年呢？', [{'sql': sql}])
+    for clause in ("'2023'", 'GROUP BY', 'HAVING', 'ORDER BY', 'DESC', 'LIMIT 3', 'OFFSET 1'):
+        assert clause in resolved
+    assert '2024' not in resolved

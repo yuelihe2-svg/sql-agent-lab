@@ -86,6 +86,6 @@ def resolve_year_followup(question, turns):
         year = years[0]
         year.set('expression', exp.Literal.string(match[1]) if year.expression.is_string else exp.Literal.number(match[1]))
         # This is an explicit interpretation, not a reference answer or executable shortcut.
-        return question + '\n本轮仅修改最近一次查询的年份，其余条件保持。统计表达式：' + ', '.join(e.sql(dialect='sqlite') for e in tree.expressions) + '；筛选条件：' + where.this.sql(dialect='sqlite')
+        return question + '\n本轮仅修改最近一次查询的年份，其余条件保持。' + query_basis(tree.sql(dialect='sqlite'))
     except (SqlglotError, ValueError):
         return question
