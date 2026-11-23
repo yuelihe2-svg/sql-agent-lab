@@ -34,6 +34,11 @@ def test_reference_roles_and_usage():
         model(role='refiner',model='local-test',messages=[{'role':'user','content':'SEMANTIC_REVIEW_V3 test'}],max_output_tokens=1000)
         for marker in ('SEMANTIC_REVIEW_V8','OUTPUT_REQUIREMENTS_V3'):
             model(role='refiner',model='local-test',messages=[{'role':'user','content':marker+' test'}],max_output_tokens=1000)
+        from sql_agent_lab.macsql.reference_baseline import _messages
+        model(role='refiner', model='local-test',
+              messages=_messages('OUTPUT_REQUIREMENTS_V3 test', 'reference data', 'history'), max_output_tokens=1000)
+        model(role='decomposer', model='local-test',
+              messages=_messages('Generate SQL', '', 'SEMANTIC_REVIEW_V8 example'), max_output_tokens=1000)
         with pytest.raises(ValueError, match="validated local model"):
             model(role="decomposer", model="another", messages=[], max_output_tokens=1000)
 
@@ -42,6 +47,7 @@ def test_reference_roles_and_usage():
     assert requests[3]['format']=='json'
     assert requests[4]['format']=='json'
     assert requests[5]['format']==requests[6]['format']=='json'
+    assert requests[7]['format'] == 'json' and 'format' not in requests[8]
     for request in requests:
         assert request["options"] == {"num_ctx": 8192, "num_predict": 1000,
                                       "temperature": 0, "seed": 123, "num_thread": 8, "num_gpu": 0}
