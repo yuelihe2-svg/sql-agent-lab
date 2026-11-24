@@ -56,8 +56,9 @@ def main():
     parser.add_argument('--answer-cases', action='store_true', help='Save scalar/zero/empty/null/error examples without models')
     parser.add_argument('--queue-demo', action='store_true', help='Offline workspace with a 30-second task deadline')
     parser.add_argument('--port', type=int, default=0)
+    parser.add_argument('--accounts-config', type=Path)
     args = parser.parse_args()
-    if args.queue_demo:
+    if args.queue_demo or args.accounts_config:
         args.standalone = args.workspace = True
     if args.empty_workspace:
         if args.showcase or args.answer_cases:
@@ -124,7 +125,7 @@ def main():
             sources.write_text(json.dumps({'sources': entries}), encoding='utf8')
         app = live_ui.Observatory(None, root / 'runs', sources=sources,
                                   workspace_db=root / 'workspace.sqlite' if args.workspace else None,
-                                  run_timeout=30 if args.queue_demo else 600)
+                                  run_timeout=30 if args.queue_demo else 600, accounts_config=args.accounts_config)
     else:
         app = live_ui.Observatory(data, root / 'runs')
     if args.answer_cases:

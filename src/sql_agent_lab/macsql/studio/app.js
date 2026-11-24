@@ -205,7 +205,13 @@
     "加入队列": "Queue query",
     "当前有查询在执行，新问题将排队。": "A query is running. New questions will be queued.",
     "本次处理超时，可以缩小查询范围后重试。": "Query timed out. Narrow the query and try again.",
-    "查询超时": "Timed out"
+    "查询超时": "Timed out",
+    "管理对话": "Manage conversations",
+    "删除选中": "Delete selected",
+    "选择对话": "Select conversation",
+    "删除选中的对话？对话将从工作区隐藏。": "Delete the selected conversations? They will be hidden from the workspace.",
+    "退出登录": "Sign out",
+    "你的账号暂时没有获授权的数据源，请联系维护者。": "Your account has no data sources. Contact the workspace operator."
   };
   function ui(text) { return locale === 'en' ? (english[text] ?? text) : text; }
 
@@ -461,7 +467,7 @@
     });
     const navigationLocked = Boolean(state.navigating || state.sending);
     const sidebarKey = JSON.stringify([state.sources, state.conversations, state.datasourceId,
-      conversation && conversation.conversation.id, navigationLocked]);
+      conversation && conversation.conversation.id, navigationLocked, state.deleteMode]);
     doc.querySelector('.shell').classList.toggle('details-closed', state.view === 'overview' || !state.detailsOpen);
     nodes.details.hidden = !state.detailsOpen;
     nodes.toggle.textContent = state.detailsOpen ? ui('收起详情') : ui('展开 SQL 详情');
@@ -473,6 +479,16 @@
     nodes.banner.textContent = state.notice || '';
 
     nodes.newer.disabled = !state.workspace || !source || navigationLocked;
+    nodes.addSource.hidden = state.team;
+    nodes.foot.hidden = state.team;
+    nodes.signOut.hidden = !state.team;
+    nodes.signOut.textContent = state.accountName ? state.accountName + ' · ' + ui('退出登录') : ui('退出登录');
+    nodes.manage.hidden = !state.conversations.length && !state.deleteMode;
+    nodes.manage.textContent = state.deleteMode ? ui('取消') : ui('管理对话');
+    nodes.manage.setAttribute('aria-pressed', String(state.deleteMode));
+    nodes.deleteSelected.hidden = !state.deleteMode;
+    nodes.deleteSelected.disabled = !state.deleteSelection.size || navigationLocked;
+    nodes.deleteSelected.textContent = ui('删除选中') + ' (' + state.deleteSelection.size + ')';
     nodes.addSource.disabled = !state.workspace || navigationLocked || Boolean(state.activeRunId);
     nodes.overviewButton.hidden = state.view !== 'overview';
     nodes.overviewButton.disabled = !state.workspace || !source || navigationLocked;
@@ -511,7 +527,7 @@
         nodes.thread.append(renderOverview(doc, {
           summary: overviewSummary(state.overview.profile),
           tables: schemaTables(state.overview.profile),
-          knowledge: knowledgeCards(state.overview.knowledge, state.datasourceId)
+          knowledge: knowledgeCards(state.overview.knowledge, state.datasourceId), readOnly: state.team
         }, handlers));
         const preview = renderRetrievalForm(doc, handlers);
         if (previewFields && nodes.overviewSource === state.datasourceId) {
@@ -527,7 +543,7 @@
             && nodes.overviewRecord === state.overview) {
           for (const name of ['title', 'format', 'body']) knowledge.elements[name].value = draftFields.elements[name].value;
         }
-        nodes.thread.append(knowledge);
+        if (!state.team) nodes.thread.append(knowledge);
         nodes.overviewSource = state.datasourceId;
         nodes.overviewDraft = state.draft;
         nodes.overviewRecord = state.overview;
@@ -572,7 +588,8 @@
     nodes.threadConversation = conversationId;
     thread.replaceChildren();
     if (!state.workspace || !state.sources.length) {
-      const message = state.workspace ? ui('点击左侧「添加数据库」，选择 SQLite 文件后即可开始提问。') : ui('工作区还不能保存会话。');
+      const message = state.team ? ui('你的账号暂时没有获授权的数据源，请联系维护者。')
+        : state.workspace ? ui('点击左侧「添加数据库」，选择 SQLite 文件后即可开始提问。') : ui('工作区还不能保存会话。');
       nodes.thread.append(el(doc, 'div', 'empty-thread', state.notice || message));
     } else if (!conversation) {
       const empty = el(doc, 'div', 'empty-thread');
@@ -633,6 +650,19 @@
       menu.append(info);
       row.append(arrow, source, plus, menu);
       state.conversations.filter(function (talk) { return talk.datasource_id === item.id; }).forEach(function (talk) {
+        if (state.deleteMode) {
+          const label = el(doc, 'label', 'talk-selection');
+          const checkbox = el(doc, 'input');
+          checkbox.type = 'checkbox';
+          checkbox.checked = state.deleteSelection.has(talk.id);
+          checkbox.disabled = Boolean(navigationLocked);
+          const caption = talk.title || ui('未命名对话');
+          checkbox.setAttribute('aria-label', ui('选择对话') + ': ' + caption);
+          checkbox.addEventListener('change', function () { handlers.selectForDeletion(talk.id, checkbox.checked); });
+          label.append(checkbox, el(doc, 'span', null, caption));
+          list.append(label);
+          return;
+        }
         const button = el(doc, 'button', 'talk', talk.title || ui('未命名对话'));
         button.type = 'button';
         button.title = talk.title || '';
@@ -855,7 +885,7 @@
       const remove = el(doc, 'button', 'text-action', ui('删除'));
       remove.type = 'button';
       remove.addEventListener('click', function () { handlers.remove(item); });
-      card.append(edit, remove);
+      if (!model.readOnly) card.append(edit, remove);
       knowledge.append(card);
     });
     root.append(knowledge);
@@ -1027,6 +1057,7 @@
       detailsOpen: false,
       selectedRunId: null,
       activeRunId: null,
+      team: false, accountName: '', deleteMode: false, deleteSelection: new Set(),
       workspace: false,
       notice: '',
       error: '',
@@ -1140,7 +1171,41 @@
       writePref('language', languageSelect.value);
       root.location.reload();
     });
-    sidebar.append(brand, closeNavigation, sourceLabel, addSource, sourceList, preferences, foot, upload);
+    const management = el(doc, 'div', 'talk-management');
+    const manage = el(doc, 'button', 'secondary', ui('管理对话'));
+    const deleteSelected = el(doc, 'button', 'secondary delete-selected', ui('删除选中'));
+    const signOut = el(doc, 'button', 'secondary sign-out', ui('退出登录'));
+    for (const button of [manage, deleteSelected, signOut]) button.type = 'button';
+    management.append(manage, deleteSelected);
+    sidebar.append(brand, closeNavigation, sourceLabel, addSource, management, sourceList, preferences, signOut, foot, upload);
+    manage.addEventListener('click', function () {
+      state.deleteMode = !state.deleteMode;
+      state.deleteSelection.clear();
+      paint();
+    });
+    deleteSelected.addEventListener('click', function () {
+      const ids = Array.from(state.deleteSelection);
+      if (!ids.length || !root.confirm(ui('删除选中的对话？对话将从工作区隐藏。'))) return;
+      navigate(async function () {
+        await request('/api/conversations/delete', { ids: ids });
+        if (state.detail && ids.includes(state.detail.conversation.id)) {
+          state.detail = null;
+          state.selectedRunId = null;
+          selectDraft('new:' + state.datasourceId);
+          remember();
+        }
+        for (const id of ids) drafts.delete(id);
+        state.deleteSelection.clear();
+        state.deleteMode = false;
+        await refreshList();
+      });
+    });
+    signOut.addEventListener('click', function () {
+      navigate(async function () {
+        await request('/api/session', undefined, 'DELETE');
+        root.location.href = '/workspace/';
+      });
+    });
     addSource.addEventListener('click', function () {
       uploadError.textContent = '';
       upload.showModal();
@@ -1312,6 +1377,7 @@
       details: details, toggle: toggle, title: title, subtitle: subtitle, banner: banner,
       sourceList: sourceList, talkList: talkList, thread: thread, runHint: runHint, error: error,
       historyInput: historyInput, send: send, live: live, form: form, question: question, strategy: strategy,
+      manage, deleteSelected, signOut, foot,
       newer: newer, addSource: addSource, overviewButton: overviewButton, detailSource: sourceBlock.querySelector('p'),
       detailQuestion: questionBlock.querySelector('p'), sql: sql, copySql: copySql, copyStatus: copyStatus,
       runState: stateBlock.querySelector('p'), tokenIn: tokenIn, tokenOut: tokenOut,
@@ -1338,6 +1404,7 @@
       let data = {};
       try { data = await response.json(); } catch (error) { data = {}; }
       if (!response.ok) {
+        if (response.status === 401) root.location.reload();
         const failure = new Error(data.error || ui('请求未完成'));
         failure.status = response.status;
         throw failure;
@@ -1404,7 +1471,16 @@
         const active = state.activeRunId;
         await refreshList();
         if (version !== revision) return;
-        if (state.view === 'chat' && state.detail && (active || state.activeRunId || state.detail.runs.some(run => run.state === 'queued'))) {
+        const currentId = state.detail?.conversation.id;
+        if (currentId && !state.conversations.some(conversation => conversation.id === currentId)) {
+          state.detail = null;
+          state.selectedRunId = null;
+          state.detailsOpen = false;
+          selectDraft('new:' + state.datasourceId);
+          drafts.delete(currentId);
+          remember();
+          paint();
+        } else if (state.view === 'chat' && state.detail && (active || state.activeRunId || state.detail.runs.some(run => run.state === 'queued'))) {
           await openConversation(state.detail.conversation.id);
         } else paint();
         if (version === revision && state.notice) {
@@ -1441,6 +1517,8 @@
       try {
         const catalog = await request('/api/catalog');
         state.sources = publicSources(catalog);
+        state.team = catalog.workspace_limited === true;
+        state.accountName = catalog.account?.name || '';
         try {
           await refreshList();
           state.workspace = true;
@@ -1501,6 +1579,11 @@
     }
 
     const handlers = {
+      selectForDeletion: function (id, selected) {
+        if (selected) state.deleteSelection.add(id);
+        else state.deleteSelection.delete(id);
+        paint();
+      },
       showSql: function (id) {
         state.selectedRunId = id;
         state.detailsOpen = true;

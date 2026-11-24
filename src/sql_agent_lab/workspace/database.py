@@ -20,7 +20,7 @@ from .models import (
 )
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 # One implicit local workspace. Restarts reuse this id instead of inserting another.
 LOCAL_WORKSPACE_ID = '5c6a1e0a-7b34-4d5e-9f10-0a1b2c3d4e5f'
 LOCAL_WORKSPACE_NAME = 'Local'
@@ -30,7 +30,7 @@ LOCAL_USER_NAME = 'Local'
 APP_TABLES = frozenset({
     'schema_migrations', 'workspace', 'app_user', 'membership', 'data_source',
     'data_source_grant', 'conversation', 'message', 'agent_run', 'audit_event',
-    'database_profile', 'knowledge_document', *FTS_TABLES,
+    'database_profile', 'knowledge_document', 'deleted_conversation', *FTS_TABLES,
 })
 # Columns that would copy a user database, a credential, or gold SQL.
 FORBIDDEN_COLUMNS = frozenset({
@@ -148,6 +148,11 @@ CREATE INDEX IF NOT EXISTS agent_run_conversation_start ON agent_run(conversatio
 CREATE INDEX IF NOT EXISTS agent_run_message ON agent_run(user_message_id);
 CREATE INDEX IF NOT EXISTS conversation_recent ON conversation(workspace_id, updated_at DESC, id);
 CREATE INDEX IF NOT EXISTS knowledge_by_source ON knowledge_document(datasource_id, updated_at DESC, id);
+"""), (5, """
+CREATE TABLE IF NOT EXISTS deleted_conversation (
+    conversation_id TEXT PRIMARY KEY REFERENCES conversation(id),
+    deleted_at TEXT NOT NULL
+);
 """))
 
 
@@ -605,17 +610,54 @@ class WorkspaceStore:
 
     def get_conversation(self, conversation_id):
         with self._session() as conn:
-            row = conn.execute('SELECT * FROM conversation WHERE id = ?', (conversation_id,)).fetchone()
+            row = conn.execute('SELECT * FROM conversation WHERE id = ? AND id NOT IN (SELECT conversation_id FROM deleted_conversation)', (conversation_id,)).fetchone()
         if row is None:
             raise ValueError('Conversation is not registered')
         return _conversation_from_row(row)
 
-    def list_conversations(self):
+    def list_conversations(self, user_id=None):
         with self._session() as conn:
             rows = conn.execute(
-                'SELECT * FROM conversation WHERE workspace_id = ? ORDER BY updated_at DESC, id',
-                (LOCAL_WORKSPACE_ID,))
+                'SELECT * FROM conversation WHERE workspace_id = ? AND (? IS NULL OR user_id = ?) '
+                'AND id NOT IN (SELECT conversation_id FROM deleted_conversation) ORDER BY updated_at DESC, id',
+                (LOCAL_WORKSPACE_ID, user_id, user_id))
             return [_conversation_from_row(row) for row in rows]
+
+    def register_team_user(self, user_id, name):
+        with self._session() as conn:
+            conn.execute('INSERT INTO app_user(id, display_name, created_at) VALUES (?, ?, ?) '
+                         'ON CONFLICT(id) DO UPDATE SET display_name=excluded.display_name',
+                         (user_id, name, utc_now()))
+            conn.execute("INSERT OR IGNORE INTO membership(workspace_id, user_id, role) VALUES (?, ?, 'analyst')",
+                         (LOCAL_WORKSPACE_ID, user_id))
+
+    def has_team_users(self):
+        with self._session() as conn:
+            return conn.execute('SELECT 1 FROM membership WHERE workspace_id=? AND user_id!=? LIMIT 1',
+                                (LOCAL_WORKSPACE_ID, LOCAL_USER_ID)).fetchone() is not None
+
+    @staticmethod
+    def _audit(conn, user_id, action, object_type, object_id, outcome):
+        conn.execute('INSERT INTO audit_event(id, at, actor_user_id, workspace_id, action, object_type, '
+                     'object_id, outcome, detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                     (str(uuid.uuid4()), utc_now(), user_id, LOCAL_WORKSPACE_ID,
+                      action, object_type, object_id, outcome, '{}'))
+
+    def audit(self, user_id, action, object_type, object_id, outcome):
+        with self._session() as conn:
+            self._audit(conn, user_id, action, object_type, object_id, outcome)
+
+    def hide_conversations(self, user_id, conversation_ids):
+        with self._session() as conn:
+            conn.executemany('INSERT INTO deleted_conversation(conversation_id, deleted_at) VALUES (?, ?)',
+                             [(cid, utc_now()) for cid in conversation_ids])
+            for cid in conversation_ids:
+                self._audit(conn, user_id, 'delete', 'conversation', cid, 'ok')
+
+    def deleted_run_ids(self):
+        with self._session() as conn:
+            return {row[0] for row in conn.execute('SELECT r.id FROM agent_run r JOIN deleted_conversation d '
+                                                   'ON d.conversation_id=r.conversation_id')}
 
     def save_profile(self, datasource_id, workspace_id, fingerprint, extracted_at, profile_json):
         """Replace the stored catalog profile. This does not open a user database."""

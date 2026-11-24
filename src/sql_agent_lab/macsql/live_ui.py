@@ -17,6 +17,9 @@ from urllib.parse import urlparse, parse_qs
 from uuid import uuid4
 
 import httpx
+from sql_agent_lab.workspace.accounts import AccessDenied, Accounts, COOKIE, TTL
+from sql_agent_lab.workspace.database import LOCAL_USER_ID
+
 from .context import ContextPolicy
 from .dataset import Question, score_sql
 from .data_sources import SourceRegistry
@@ -31,7 +34,7 @@ from .evaluation_audit import EvaluationSession
 from .trace_support import TraceEmitter, review_timing, token_totals
 from .semantic_review import CONTRACT
 from .task_lifecycle import (change_task, event_stage, new_task, result_task_state,
-                             task_view, write_json_atomic)
+                             task_view, utc_now, write_json_atomic)
 
 
 class Stopped(RuntimeError):
@@ -98,7 +101,7 @@ class ObservedTools:
 
 class Observatory:
     def __init__(self, data, output, metadata=None, history=None, analysis_dir=None, recorded_batches=None,
-                 *, sources=None, workspace_db=None, queue_limit=8, run_timeout=600):
+                 *, sources=None, workspace_db=None, queue_limit=8, run_timeout=600, accounts_config=None):
         self.data = Path(data).resolve() if data else None
         self.output = Path(output).resolve()
         checkout = Path(__file__).resolve().parents[3]
@@ -123,6 +126,14 @@ class Observatory:
             from sql_agent_lab.workspace.database import sync_registered_sources
             self.workspace_store = sync_registered_sources(workspace_db, self.sources.catalog())
             self.workspace_db = Path(workspace_db)
+        self.accounts = None
+        if accounts_config is not None:
+            if self.workspace_store is None:
+                raise ValueError('Accounts require --workspace-db')
+            self.workspace_store.ensure_local_user(utc_now())
+            self.accounts = Accounts(accounts_config, self.workspace_store, self.databases)
+        elif self.workspace_store is not None and self.workspace_store.has_team_users():
+            raise ValueError('This team workspace requires --accounts-config')
         self.dataset = self.benchmark.dataset if self.benchmark else []
         self.metadata = load_metadata(metadata) if metadata else None
         self.history = Path(history).resolve() if history else None
@@ -155,6 +166,14 @@ class Observatory:
                 if (manifest.get('mode') != 'local_inference' or manifest.get('benchmark')
                         or question.db_id not in self.databases):
                     continue
+                if self.accounts:
+                    try:
+                        conversation = self._workspace().get_conversation(manifest.get('conversation_id'))
+                        account = self.accounts.by_id.get(conversation.user_id)
+                        if account is None or question.db_id not in account.sources or question.db_id != conversation.datasource_id:
+                            continue
+                    except ValueError:
+                        continue
                 if path.with_name('result.json').exists():
                     continue
                 recovered.append((manifest['created_at'], path.parent.name, task, question, manifest))
@@ -338,6 +357,9 @@ class Observatory:
 
     def paths(self, recorded=None):
         paths = {p.name: p for p in self.output.iterdir() if p.is_dir() and (p/'manifest.json').exists()}
+        if getattr(self, 'workspace_db', None) is not None:
+            for run_id in self._workspace().deleted_run_ids():
+                paths.pop(run_id, None)
         if self.history:
             for p in self.history.glob('local-pilot-*'):
                 if (p/'manifest.json').exists():
@@ -463,18 +485,65 @@ class Observatory:
             row['review_timing'] = review_timing(result, events)
         return data
 
-    def list_conversations(self):
+    def _require_source(self, account, datasource_id):
+        if account is not None and datasource_id not in account.sources:
+            self._workspace().audit(account.id, 'access', 'source', str(datasource_id)[:100], 'denied')
+            raise AccessDenied('Not found')
+
+    def _owned_conversation(self, conversation_id, account):
+        store = self._workspace()
+        try:
+            conversation = store.get_conversation(str(conversation_id))
+        except ValueError:
+            if account is None:
+                raise
+            conversation = None
+        if (conversation is None or conversation.user_id != (account.id if account else LOCAL_USER_ID)
+                or (account is not None and conversation.datasource_id not in account.sources)):
+            if account is not None:
+                store.audit(account.id, 'access', 'conversation', str(conversation_id)[:100], 'denied')
+            raise AccessDenied('Not found')
+        return conversation
+
+    def list_conversations(self, account=None):
         store = self._workspace()
         with self.lock:
             active = self.active
-        return {'conversations': [_public_conversation(item) for item in store.list_conversations()],
+            if account and active:
+                try:
+                    conversation = store.get_conversation(store.get_agent_run(active).conversation_id)
+                    if conversation.user_id != account.id or conversation.datasource_id not in account.sources:
+                        active = None
+                except ValueError:
+                    active = None
+        return {'conversations': [_public_conversation(item) for item in
+                                 store.list_conversations(account.id if account else LOCAL_USER_ID)
+                                 if account is None or item.datasource_id in account.sources],
                 'active_run_id': active}
 
-    def create_conversation(self, payload):
+    def delete_conversations(self, ids, account=None):
+        if (not isinstance(ids, list) or not 1 <= len(ids) <= 100
+                or any(not isinstance(cid, str) or not 1 <= len(cid) <= 100 for cid in ids)):
+            raise ValueError('请选择 1 至 100 条对话。')
+        ids = list(dict.fromkeys(ids))
+        with self.lock:
+            for cid in ids:
+                self._owned_conversation(cid, account)
+                for run in self._workspace().list_agent_runs(cid):
+                    if run.id == self.active or run.id in self.pending:
+                        raise ValueError('请先停止仍在排队或运行的查询，再删除对话。')
+            self._workspace().ensure_local_user(utc_now())
+            self._workspace().hide_conversations(account.id if account else LOCAL_USER_ID, ids)
+        return {'deleted': ids}
+
+    def create_conversation(self, payload, account=None):
         if not isinstance(payload, dict):
             raise ValueError('Expected a JSON object')
         datasource_id = payload.get('datasource_id')
-        if not isinstance(datasource_id, str) or datasource_id not in self.databases:
+        if not isinstance(datasource_id, str):
+            raise ValueError('Data source is not registered')
+        self._require_source(account, datasource_id)
+        if datasource_id not in self.databases:
             raise ValueError('Data source is not registered')
         store = self._workspace()
         source = store.get_data_source(datasource_id)
@@ -486,23 +555,23 @@ class Observatory:
         from sql_agent_lab.workspace.database import LOCAL_USER_ID, LOCAL_WORKSPACE_ID
         from sql_agent_lab.workspace.models import Conversation
         conversation = Conversation(
-            str(uuid4()), LOCAL_WORKSPACE_ID, LOCAL_USER_ID, datasource_id, title, now, now)
+            str(uuid4()), LOCAL_WORKSPACE_ID, account.id if account else LOCAL_USER_ID, datasource_id, title, now, now)
         store.add_conversation(conversation)
         return _public_conversation(conversation)
 
-    def conversation_detail(self, conversation_id):
+    def conversation_detail(self, conversation_id, account=None):
         store = self._workspace()
-        conversation = store.get_conversation(str(conversation_id))
         with self.lock:
+            conversation = self._owned_conversation(conversation_id, account)
             messages = [_public_message(item) for item in store.list_messages(conversation.id)]
             runs = [self._run_summary(item) for item in store.list_agent_runs(conversation.id)]
         return {'conversation': _public_conversation(conversation), 'messages': messages, 'runs': runs}
 
-    def post_conversation_message(self, conversation_id, payload):
+    def post_conversation_message(self, conversation_id, payload, account=None):
         if not isinstance(payload, dict):
             raise ValueError('Expected a JSON object')
         store = self._workspace()
-        conversation = store.get_conversation(str(conversation_id))
+        conversation = self._owned_conversation(conversation_id, account)
         if payload.get('datasource_id', conversation.datasource_id) != conversation.datasource_id:
             raise ValueError('A conversation is bound to one data source')
         if payload.get('db_id', conversation.datasource_id) != conversation.datasource_id:
@@ -514,6 +583,8 @@ class Observatory:
             'use_conversation_context': True,
             **{key: payload[key] for key in ('use_grounding', 'retrieval_strategy', 'use_conversation_context') if key in payload},
         })
+        if account is not None:
+            store.audit(account.id, 'query', 'source', conversation.datasource_id, 'ok')
         run = store.get_agent_run(run_id)
         if run.conversation_id != conversation.id:
             raise RuntimeError('Conversation was not saved')
@@ -747,6 +818,8 @@ class Observatory:
                 raise ValueError('A run is already active')
             if len(self.pending) >= self.queue_limit:
                 raise ValueError('等待队列已满，请等一个任务结束后重试。')
+            if conversation_id is not None:
+                self._workspace().get_conversation(str(conversation_id))
             run_id = datetime.now().strftime('%Y%m%d-%H%M%S-') + uuid4().hex[:6]
             path = self.output / run_id
             path.mkdir()
@@ -1072,6 +1145,8 @@ def _studio_file(path):
 
 
 def _match_conversation(path):
+    if path == '/api/conversations/delete':
+        return 'delete', None
     if path == '/api/conversations':
         return 'collection', None
     prefix = '/api/conversations/'
@@ -1135,8 +1210,75 @@ def _match_source(path):
     return None
 
 
+_LOGIN = """<!doctype html><html lang="zh-CN"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>SQL Agent Studio</title>
+<link rel="stylesheet" href="/workspace/styles.css">
+<main style="max-width:28rem;margin:10vh auto;padding:1.5rem">
+<h1>登录 SQL Agent Studio</h1>
+<form><p><label>账号访问令牌 <input type="password" name="token" required maxlength="256" autocomplete="current-password"></label></p>
+<button type="submit" class="send">登录 / Sign in</button><p role="alert" id="error"></p></form>
+</main><script>
+const form = document.querySelector('form');
+form.addEventListener('submit', async event => {
+  event.preventDefault();
+  const button = form.querySelector('button');
+  button.disabled = true;
+  try {
+    const response = await fetch('/api/session', {method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({token:form.elements.token.value})});
+    if (!response.ok) throw new Error();
+    form.reset();
+    location.reload();
+  } catch { document.getElementById('error').textContent = '登录失败，请检查令牌后重试。'; }
+  finally { button.disabled = false; }
+});
+</script></html>""".encode("utf-8")
+
+
 def make_handler(app):
     class Handler(BaseHTTPRequestHandler):
+        account = None
+
+        def _authorize(self, path, method):
+            accounts = getattr(app, 'accounts', None)
+            if not accounts:
+                return True
+            if method == 'GET' and path in ('/workspace/app.js', '/workspace/styles.css'):
+                return True
+            if method == 'POST' and path == '/api/session':
+                return True
+            self.account = accounts.identify(self.headers.get('Cookie'))
+            if self.account is None:
+                if method == 'GET' and path in ('/workspace', '/workspace/'):
+                    self.send(_LOGIN, content_type='text/html')
+                else:
+                    self.send({'error': 'Sign in required'}, 401)
+                return False
+            kind, _ = _match_conversation(path)
+            source = _match_source(path)
+            if source:
+                source_id, operation, _ = source
+                if ((method == 'GET' and operation in ('profile', 'context', 'knowledge', 'knowledge_item'))
+                        or (method == 'POST' and operation == 'grounding')):
+                    app._require_source(self.account, source_id)
+                    app._workspace().audit(self.account.id, operation, 'source', source_id, 'ok')
+                    return True
+            if method == 'GET' and (path in ('/workspace', '/workspace/', '/api/catalog') or kind in ('collection', 'item')):
+                return True
+            if method == 'POST' and (path == '/api/stop' or kind in ('collection', 'messages', 'delete')):
+                return True
+            if method == 'DELETE' and (path == '/api/session' or kind == 'item'):
+                return True
+            self.send({'error': 'Not found'}, 404)
+            return False
+
+        def _sign_in(self, payload):
+            session = app.accounts.sign_in(payload.get('token'), self.headers.get('Cookie'))
+            if session is None:
+                return self.send({'error': 'Sign in failed'}, 401)
+            self._session_cookie = f'{COOKIE}={session}; HttpOnly; SameSite=Strict; Path=/; Max-Age={TTL}'
+            return self.send({'signed_in': True})
+
         def log_message(self, *args):
             pass
 
@@ -1149,6 +1291,8 @@ def make_handler(app):
                 self.send_header('X-Content-Type-Options', 'nosniff')
                 self.send_header('Content-Security-Policy', "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; frame-ancestors 'none'")
                 self.send_header('Content-Length', str(len(body)))
+                if getattr(self, '_session_cookie', None):
+                    self.send_header('Set-Cookie', self._session_cookie)
                 self.end_headers()
                 self.wfile.write(body)
             except ConnectionError:
@@ -1160,6 +1304,8 @@ def make_handler(app):
                 return self.send({'error': 'Local host only'}, 403)
             url = urlparse(self.path)
             try:
+                if not self._authorize(url.path, 'GET'):
+                    return
                 if url.path == '/':
                     return self.send(Path(__file__).with_name('user_ui.html').read_bytes(), content_type='text/html')
                 if url.path == '/observatory':
@@ -1183,7 +1329,11 @@ def make_handler(app):
                     name, mime = names[url.path]
                     return self.send((directory / name).read_bytes(), content_type=mime)
                 if url.path == '/api/catalog':
-                    return self.send(app.catalog())
+                    catalog = app.catalog()
+                    if self.account:
+                        catalog = {'sources': [row for row in catalog['sources'] if row['id'] in self.account.sources],
+                                   'account': {'name': self.account.name}, 'workspace_limited': True}
+                    return self.send(catalog)
                 if url.path == '/api/runs':
                     return self.send(app.run_index())
                 if url.path == '/api/user/runs':
@@ -1197,8 +1347,8 @@ def make_handler(app):
                     if app.workspace_db is None:
                         return self.send({'error': 'Not found'}, 404)
                     if kind == 'collection':
-                        return self.send(app.list_conversations())
-                    return self.send(app.conversation_detail(conversation_id))
+                        return self.send(app.list_conversations(self.account))
+                    return self.send(app.conversation_detail(conversation_id, self.account))
                 source = _match_source(url.path)
                 if source is not None:
                     if app.workspace_db is None:
@@ -1211,6 +1361,8 @@ def make_handler(app):
                     if source_kind == 'knowledge_item':
                         return self.send(app.get_source_knowledge(source_id, knowledge_id))
                     return self.send(app.source_context(source_id))
+                self.send({'error': 'Not found'}, 404)
+            except AccessDenied:
                 self.send({'error': 'Not found'}, 404)
             except (ValueError, OSError) as error:
                 self.send({'error': str(error)}, 400)
@@ -1241,6 +1393,8 @@ def make_handler(app):
             # Reject cross-origin browser requests and DNS rebinding hostnames.
             try:
                 path = urlparse(self.path).path
+                if not self._local_request() or not self._authorize(path, 'POST'):
+                    return
                 source = _match_source(path)
                 limit = 64 * 1024
                 if path == '/api/sources/upload':
@@ -1250,6 +1404,8 @@ def make_handler(app):
                 payload = self._json_body(limit)
                 if payload is None:
                     return None
+                if path == '/api/session' and getattr(app, 'accounts', None):
+                    return self._sign_in(payload)
                 if path == '/api/sources/upload':
                     if app.workspace_db is None:
                         return self.send({'error': 'Not found'}, 404)
@@ -1263,16 +1419,29 @@ def make_handler(app):
                         return self.send({'error': 'Not found'}, 404)
                     return self.send(app.ground_source(source[0], payload))
                 kind, conversation_id = _match_conversation(path)
-                if kind in ('collection', 'messages'):
+                if kind in ('collection', 'messages', 'delete'):
                     if app.workspace_db is None:
                         return self.send({'error': 'Not found'}, 404)
                     if kind == 'collection':
-                        return self.send(app.create_conversation(payload))
-                    return self.send(app.post_conversation_message(conversation_id, payload))
+                        return self.send(app.create_conversation(payload, self.account))
+                    if kind == 'delete':
+                        return self.send(app.delete_conversations(payload.get('ids'), self.account))
+                    return self.send(app.post_conversation_message(conversation_id, payload, self.account))
                 if self.path == '/api/start':
                     return self.send({'id': app.start(payload)})
                 if self.path == '/api/stop':
-                    return self.send(app.request_stop(payload.get('id')))
+                    run_id = payload.get('id')
+                    if self.account:
+                        if not isinstance(run_id, str):
+                            raise AccessDenied('Not found')
+                        try:
+                            run = app._workspace().get_agent_run(run_id)
+                        except ValueError:
+                            raise AccessDenied('Not found') from None
+                        app._owned_conversation(run.conversation_id, self.account)
+                    return self.send(app.request_stop(run_id))
+                self.send({'error': 'Not found'}, 404)
+            except AccessDenied:
                 self.send({'error': 'Not found'}, 404)
             except (ValueError, TypeError) as error:
                 self.send({'error': str(error)}, 400)
@@ -1283,7 +1452,10 @@ def make_handler(app):
 
         def do_PUT(self):
             try:
-                source = _match_source(urlparse(self.path).path)
+                path = urlparse(self.path).path
+                if not self._local_request() or not self._authorize(path, 'PUT'):
+                    return
+                source = _match_source(path)
                 payload = self._json_body(_KNOWLEDGE_REQUEST_BYTES)
                 if payload is None:
                     return None
@@ -1292,6 +1464,8 @@ def make_handler(app):
                 if app.workspace_db is None:
                     return self.send({'error': 'Not found'}, 404)
                 self.send(app.update_source_knowledge(source[0], source[2], payload))
+            except AccessDenied:
+                self.send({'error': 'Not found'}, 404)
             except (ValueError, TypeError) as error:
                 self.send({'error': str(error)}, 400)
             except sqlite3.Error:
@@ -1308,12 +1482,24 @@ def make_handler(app):
                     raise ValueError('Request too large')
                 if size:
                     self.rfile.read(size)
-                source = _match_source(urlparse(self.path).path)
+                path = urlparse(self.path).path
+                if not self._authorize(path, 'DELETE'):
+                    return
+                if path == '/api/session' and getattr(app, 'accounts', None):
+                    app.accounts.sign_out(self.headers.get('Cookie'))
+                    self._session_cookie = f'{COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'
+                    return self.send({'signed_in': False})
+                kind, conversation_id = _match_conversation(path)
+                if kind == 'item' and app.workspace_db is not None:
+                    return self.send(app.delete_conversations([conversation_id], self.account))
+                source = _match_source(path)
                 if source is None or source[1] != 'knowledge_item':
                     return self.send({'error': 'Not found'}, 404)
                 if app.workspace_db is None:
                     return self.send({'error': 'Not found'}, 404)
                 self.send(app.delete_source_knowledge(source[0], source[2]))
+            except AccessDenied:
+                self.send({'error': 'Not found'}, 404)
             except (ValueError, TypeError) as error:
                 self.send({'error': str(error)}, 400)
             except sqlite3.Error:
@@ -1335,6 +1521,7 @@ def argument_parser():
                         help='Read an existing API batch without invoking models or evaluation')
     parser.add_argument('--workspace-db', type=Path, default=None,
                         help='Optional workspace metadata SQLite file. Omit to leave startup unchanged.')
+    parser.add_argument('--accounts-config', type=Path, help='Opt-in local per-account access configuration')
     parser.add_argument('--port', type=int, default=8765)
     parser.add_argument('--queue-limit', type=int, default=8, help='Maximum waiting tasks')
     parser.add_argument('--run-timeout', type=float, default=600, help='Execution budget in seconds, excluding queue wait')
@@ -1345,7 +1532,7 @@ def main():
     args = argument_parser().parse_args()
     app = Observatory(args.data_dir, args.output_dir, args.metadata, args.history, args.analysis_dir,
                       args.recorded_batch, sources=args.sources, workspace_db=args.workspace_db,
-                      queue_limit=args.queue_limit, run_timeout=args.run_timeout)
+                      queue_limit=args.queue_limit, run_timeout=args.run_timeout, accounts_config=args.accounts_config)
     server = ThreadingHTTPServer(('127.0.0.1', args.port), make_handler(app))
     landing = '/workspace/' if args.workspace_db else '/'
     print(f'SQL Agent Lab http://127.0.0.1:{server.server_port}{landing}', flush=True)

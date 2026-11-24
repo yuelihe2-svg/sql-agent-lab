@@ -92,6 +92,47 @@ py -3.13 -m venv .venv
 
 无模型浏览器验收：运行 `.\.venv\Scripts\python.exe -B tests/browser_lifecycle_fixture.py --standalone --root <仓库外的全新临时目录>`，打开打印出的随机端口。该模式不创建 BIRD 文件，注册两份合成 SQLite，选择不同数据源会分别返回 42 和 99；Agent 已替换且所有出站连接被阻断。创建该目录中的 `shutdown` 文件可退出测试服务。`tests/test_data_sources.py` 检查同一 HTTP/执行链路、失败边界和 BIRD 兼容性；`test_source_ui.cjs` 检查模式切换。
 
+## 本地多人账号与删除对话
+
+默认工作区继续使用本地单用户模式。在左侧选择“管理对话”，勾选要删除的对话，再选择“删除选中”。可以跨数据源选择。批量删除会先核对每一项，存在无权访问或仍在运行、排队的对话时，整批不会删除。删除后对话及其结果从应用隐藏，磁盘记录和已有备份仍按保留策略保存。
+
+显式传入 `--accounts-config` 启用本地多人模式。账号配置是仓库外的 JSON 数组，每行对象使用固定 UUID `id`、显示名 `name`、高熵访问令牌的 SHA-256 十六进制摘要 `token_sha256`，以及允许使用的数据源 ID 数组 `sources`。保持 UUID 不变可保留归属。账号登录后只能使用获授权的数据源、查看和删除自己的对话。普通账号可以查看口径，上传数据库、修改知识、观察台和全局运行接口留在维护侧。审计保存在工作区的 `audit_event`，包含查询提交、数据源访问、拒绝及删除记录。有效会话最长 8 小时，服务重启后需要重新登录。
+
+下面在 PowerShell 7 生成两份随机令牌及配置。将 `shop`、`archive` 改成实际数据源 ID。配置目录须在仓库外。
+
+```powershell
+function New-StudioAccount($Name, $Sources) {
+  $token = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+  $hash = [Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($token))
+  @{ token = $token; config = @{ id = [guid]::NewGuid().ToString(); name = $Name
+      token_sha256 = [Convert]::ToHexString($hash).ToLowerInvariant(); sources = @($Sources) } }
+}
+$alice = New-StudioAccount 'Alice' @('shop')
+$bob = New-StudioAccount 'Bob' @('archive')
+@($alice.config, $bob.config) | ConvertTo-Json -Depth 4 | Set-Content D:/sql-agent-data/accounts.json -Encoding utf8
+Set-Clipboard -Value $alice.token
+.\.venv\Scripts\python.exe -m sql_agent_lab.macsql.live_ui --sources D:/sql-agent-data/sources.json --output-dir D:/sql-agent-data/team-runs --workspace-db D:/sql-agent-data/team.sqlite --accounts-config D:/sql-agent-data/accounts.json --port 8785
+```
+
+打开 `http://127.0.0.1:8785/workspace/`，粘贴令牌登录。在另一浏览器配置文件或退出后用 Bob 的令牌复测。令牌应通过受控渠道交给对应成员，避免写入项目或聊天记录。多人库后续启动或恢复都要显式提供账号配置，避免误切回无登录模式。该模式仍绑定本机回环地址，面向本地验收。团队远程部署还需接入组织身份认证和 HTTPS。
+
+## 本地工作区备份与恢复
+
+先关闭使用该工作区的服务，备份期间避免修改业务库、工作区和运行目录。下面以三个仓库外路径为例，备份和恢复目的目录都必须是新目录。
+
+```powershell
+.\.venv\Scripts\python.exe -m sql_agent_lab.workspace.backup create --workspace-db D:/sql-agent-data/workspace.sqlite --output-dir D:/sql-agent-data/runs --sources D:/sql-agent-data/sources.json --to D:/sql-agent-backups/snapshot
+.\.venv\Scripts\python.exe -m sql_agent_lab.workspace.backup verify --backup D:/sql-agent-backups/snapshot
+.\.venv\Scripts\python.exe -m sql_agent_lab.workspace.backup restore --backup D:/sql-agent-backups/snapshot --to D:/sql-agent-data/restored
+.\.venv\Scripts\python.exe -m sql_agent_lab.macsql.live_ui --workspace-db D:/sql-agent-data/restored/workspace.sqlite --sources D:/sql-agent-data/restored/sources.json --output-dir D:/sql-agent-data/restored/runs --port 8785
+```
+
+从 `http://127.0.0.1:8785/workspace/` 抽查原有对话、已保存结果、已上传数据源和指标口径。只有网页上传的数据源时，创建备份可省略 `--sources`。备份以 SQLite 快照保存工作区和业务库（包括已提交的 WAL 数据），复制已登记的知识文档与本地运行记录，并为文件生成 SHA-256 校验清单。备份目录可整体搬到其他位置，恢复会生成相对路径的数据源配置。它包含业务数据和问题记录，应按原数据的访问权限保管。
+
+**删除状态与回滚：** 删除后制作的备份会保留删除状态。恢复早于删除的快照时，如果仍有同一工作区较新的元数据 SQLite，可以给恢复命令加上 `--deletions-from D:/sql-agent-data/workspace.sqlite`，先把后续删除并入恢复副本，再启动服务。如果较新的删除记录已经丢失，旧快照无法推断这些删除，不应直接用它开放给用户。
+
+这是停服后执行的独立 SQLite 工作区备份。外部观察台归档、BIRD 数据目录和模型文件由各自的备份流程管理。恢复后的已完成结果可查看，旧执行中或等待中的任务不自动发起。正常服务重启仍按下一节的规则恢复等待任务。
+
 ## 任务生命周期：前后端如何连接
 
 当前网页服务是单进程、单执行槽，普通查询按提交顺序排队，默认可等待 8 个任务。同一输出目录应只由一个服务写入。可用 `--queue-limit` 和 `--run-timeout` 配置队列上限及执行预算，默认 600 秒，不含等待时间。
