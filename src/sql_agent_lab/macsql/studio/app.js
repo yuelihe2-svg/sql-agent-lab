@@ -207,6 +207,9 @@
     "本次处理超时，可以缩小查询范围后重试。": "Query timed out. Narrow the query and try again.",
     "查询超时": "Timed out",
     "管理对话": "Manage conversations",
+    "对话操作": "Conversation actions",
+    "删除对话": "Delete conversation",
+    "删除这条对话？": "Delete this conversation?",
     "删除选中": "Delete selected",
     "选择对话": "Select conversation",
     "删除选中的对话？对话将从工作区隐藏。": "Delete the selected conversations? They will be hidden from the workspace.",
@@ -669,7 +672,25 @@
         button.disabled = Boolean(navigationLocked);
         if (state.detail?.conversation.id === talk.id) button.setAttribute('aria-current', 'true');
         button.addEventListener('click', function () { handlers.pickConversation(talk.id); });
-        list.append(button);
+        const talkRow = el(doc, 'div', 'talk-row');
+        const actions = el(doc, 'details', 'talk-menu');
+        actions.setAttribute('name', 'workspace-conversation-action');
+        const more = el(doc, 'summary', null, '⋯');
+        more.setAttribute('aria-label', ui('对话操作') + ': ' + button.textContent);
+        const remove = el(doc, 'button', 'text-action talk-remove', ui('删除对话'));
+        remove.type = 'button';
+        remove.disabled = Boolean(navigationLocked);
+        remove.addEventListener('click', function () { handlers.removeConversation(talk.id); });
+        actions.addEventListener('keydown', function (event) {
+          if (event.key === 'Escape' && actions.open) {
+            event.stopPropagation();
+            actions.open = false;
+            more.focus();
+          }
+        });
+        actions.append(more, remove);
+        talkRow.append(button, actions);
+        list.append(talkRow);
       });
       group.append(row, list);
       nodes.sourceList.append(group);
@@ -1183,14 +1204,17 @@
       state.deleteSelection.clear();
       paint();
     });
-    deleteSelected.addEventListener('click', function () {
-      const ids = Array.from(state.deleteSelection);
-      if (!ids.length || !root.confirm(ui('删除选中的对话？对话将从工作区隐藏。'))) return;
-      navigate(async function () {
-        await request('/api/conversations/delete', { ids: ids });
+    async function removeConversations(ids, single = false) {
+      await navigate(async function () {
+        if (single) {
+          await request('/api/conversations/' + encodeURIComponent(ids[0]), undefined, 'DELETE');
+        } else {
+          await request('/api/conversations/delete', { ids: ids });
+        }
         if (state.detail && ids.includes(state.detail.conversation.id)) {
           state.detail = null;
           state.selectedRunId = null;
+          state.detailsOpen = false;
           selectDraft('new:' + state.datasourceId);
           remember();
         }
@@ -1199,6 +1223,12 @@
         state.deleteMode = false;
         await refreshList();
       });
+    }
+    deleteSelected.addEventListener('click', function () {
+      const ids = Array.from(state.deleteSelection);
+      if (ids.length && root.confirm(ui('删除选中的对话？对话将从工作区隐藏。'))) {
+        void removeConversations(ids);
+      }
     });
     signOut.addEventListener('click', function () {
       if (state.organizationLogout) {
@@ -1584,6 +1614,13 @@
     }
 
     const handlers = {
+      removeConversation: async function (id) {
+        if (state.navigating || state.sending || stopping || !root.confirm(ui('删除这条对话？'))) return;
+        await removeConversations([id], true);
+        const target = sourceList.querySelector('.talk[aria-current="true"], .source-active .talk')
+          || sourceList.querySelector('.source-active .source');
+        target?.focus();
+      },
       selectForDeletion: function (id, selected) {
         if (selected) state.deleteSelection.add(id);
         else state.deleteSelection.delete(id);

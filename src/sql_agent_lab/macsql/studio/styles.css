@@ -514,3 +514,28 @@ textarea::placeholder { color: var(--quiet); opacity: 1; }
 .talk-selection input { accent-color: var(--accent); }
 .talk-selection span { overflow-wrap: anywhere; min-width: 0; }
 .sign-out { align-self: stretch; overflow-wrap: anywhere; }
+
+.talk-row { display: flex; align-items: center; gap: var(--space-1); }
+.talk-row .talk { flex: 1; min-width: 0; }
+.talk-menu { position: relative; flex: none; }
+.talk-menu summary {
+  display: grid;
+  place-items: center;
+  min-width: 28px;
+  min-height: 32px;
+  list-style: none;
+  border-radius: var(--radius-sm);
+  color: var(--quiet);
+}
+.talk-menu summary::-webkit-details-marker { display: none; }
+.talk-menu summary:hover, .talk-menu[open] summary { background: var(--hover); color: var(--ink); }
+.talk-menu .talk-remove {
+  position: absolute;
+  inset-inline-end: 0;
+  z-index: 5;
+  white-space: nowrap;
+  color: var(--fail);
+}
+@media (max-width: 760px) {
+  .talk-menu summary { min-width: 44px; min-height: 44px; }
+}
