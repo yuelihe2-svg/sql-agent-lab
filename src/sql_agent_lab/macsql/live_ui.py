@@ -9,6 +9,7 @@ import inspect
 import json
 import logging
 import math
+import os
 from pathlib import Path
 import sqlite3
 import threading
@@ -19,6 +20,7 @@ from uuid import uuid4
 import httpx
 from sql_agent_lab.workspace.accounts import AccessDenied, Accounts, COOKIE, TTL
 from sql_agent_lab.workspace.database import LOCAL_USER_ID
+from sql_agent_lab.workspace.org_accounts import OrganizationAccounts
 
 from .context import ContextPolicy
 from .dataset import Question, score_sql
@@ -101,7 +103,7 @@ class ObservedTools:
 
 class Observatory:
     def __init__(self, data, output, metadata=None, history=None, analysis_dir=None, recorded_batches=None,
-                 *, sources=None, workspace_db=None, queue_limit=8, run_timeout=600, accounts_config=None):
+                 *, sources=None, workspace_db=None, queue_limit=8, run_timeout=600, accounts_config=None, org_config=None, gateway_key=None):
         self.data = Path(data).resolve() if data else None
         self.output = Path(output).resolve()
         checkout = Path(__file__).resolve().parents[3]
@@ -127,7 +129,18 @@ class Observatory:
             self.workspace_store = sync_registered_sources(workspace_db, self.sources.catalog())
             self.workspace_db = Path(workspace_db)
         self.accounts = None
-        if accounts_config is not None:
+        self.org_accounts = None
+        if accounts_config is not None and org_config is not None:
+            raise ValueError('Choose token accounts or organization login')
+        if org_config is None and self.workspace_store is not None and self.workspace_store.has_organization_users():
+            raise ValueError('This organization workspace requires --org-config')
+        if org_config is not None:
+            if self.workspace_store is None:
+                raise ValueError('Organization login requires --workspace-db')
+            self.workspace_store.ensure_local_user(utc_now())
+            self.org_accounts = self.accounts = OrganizationAccounts(
+                org_config, self.workspace_store, self.databases, gateway_key)
+        elif accounts_config is not None:
             if self.workspace_store is None:
                 raise ValueError('Accounts require --workspace-db')
             self.workspace_store.ensure_local_user(utc_now())
@@ -201,6 +214,11 @@ class Observatory:
             run_id = next(iter(self.pending))
             question, reference, manifest = self.pending.pop(run_id)
             try:
+                if self.org_accounts:
+                    conversation = self._workspace().get_conversation(manifest.get('conversation_id'))
+                    account = self.org_accounts.by_id.get(conversation.user_id)
+                    if account is None or question.db_id not in account.sources or question.db_id != conversation.datasource_id:
+                        raise ValueError('Organization access was revoked before execution')
                 self.active = run_id
                 self._save_task(run_id, change_task(self.tasks[run_id], state='running'))
                 if run_id in self._run_conversation and self.tasks[run_id].get('persistence_error'):
@@ -1245,9 +1263,24 @@ def make_handler(app):
                 return True
             if method == 'GET' and path in ('/workspace/app.js', '/workspace/styles.css'):
                 return True
-            if method == 'POST' and path == '/api/session':
+            org = getattr(app, 'org_accounts', None)
+            if not org and method == 'POST' and path == '/api/session':
                 return True
-            self.account = accounts.identify(self.headers.get('Cookie'))
+            if org:
+                try:
+                    self.account = org.identify_gateway(self.headers)
+                except (OSError, ValueError, sqlite3.Error):
+                    self.send({'error': 'Organization authorization unavailable'}, 503)
+                    return False
+            else:
+                self.account = accounts.identify(self.headers.get('Cookie'))
+            if self.account is None and org:
+                if method == 'GET' and path in ('/workspace', '/workspace/'):
+                    self.send(b'<!doctype html><meta charset="utf-8"><p>Organization access unavailable.</p><a href="/auth/logout">Sign out</a>',
+                              403, content_type='text/html')
+                else:
+                    self.send({'error': 'Organization sign-in or access required'}, 401)
+                return False
             if self.account is None:
                 if method == 'GET' and path in ('/workspace', '/workspace/'):
                     self.send(_LOGIN, content_type='text/html')
@@ -1267,7 +1300,7 @@ def make_handler(app):
                 return True
             if method == 'POST' and (path == '/api/stop' or kind in ('collection', 'messages', 'delete')):
                 return True
-            if method == 'DELETE' and (path == '/api/session' or kind == 'item'):
+            if method == 'DELETE' and ((path == '/api/session' and not org) or kind == 'item'):
                 return True
             self.send({'error': 'Not found'}, 404)
             return False
@@ -1299,9 +1332,18 @@ def make_handler(app):
                 # Navigation can drop an in-flight polling request.
                 self.close_connection = True
 
+        def _trusted_request(self):
+            expected = f'127.0.0.1:{self.server.server_port}'
+            org = getattr(app, 'org_accounts', None)
+            if (self.client_address[0] == '127.0.0.1' and self.headers.get_all('Host') == [expected]
+                    and (not org or org.trusts(self.headers))):
+                return True
+            self.send({'error': 'Request must arrive through the configured local entry point'}, 403)
+            return False
+
         def do_GET(self):
-            if self.headers.get('Host') != f'127.0.0.1:{self.server.server_port}':
-                return self.send({'error': 'Local host only'}, 403)
+            if not self._trusted_request():
+                return
             url = urlparse(self.path)
             try:
                 if not self._authorize(url.path, 'GET'):
@@ -1314,6 +1356,12 @@ def make_handler(app):
                     return self.send(Path(__file__).with_name('analysis.html').read_bytes(), content_type='text/html')
                 studio = _studio_file(url.path)
                 if studio is not None:
+                    if getattr(app, 'org_accounts', None) and url.path == '/workspace/':
+                        params = parse_qs(url.query)
+                        if 'datasource' in params:
+                            app._require_source(self.account, params['datasource'][0])
+                        if 'conversation' in params:
+                            app._owned_conversation(params['conversation'][0], self.account)
                     body, mime = studio
                     return self.send(body, content_type=mime)
                 if url.path in ('/api/analysis', '/analysis.csv', '/analysis.xlsx'):
@@ -1333,6 +1381,8 @@ def make_handler(app):
                     if self.account:
                         catalog = {'sources': [row for row in catalog['sources'] if row['id'] in self.account.sources],
                                    'account': {'name': self.account.name}, 'workspace_limited': True}
+                        if getattr(app, 'org_accounts', None):
+                            catalog['account']['logout_path'] = app.org_accounts.logout_path
                     return self.send(catalog)
                 if url.path == '/api/runs':
                     return self.send(app.run_index())
@@ -1370,9 +1420,12 @@ def make_handler(app):
                 self.send({'error': '工作区存储暂不可用，请稍后重试。'}, 500)
 
         def _local_request(self):
-            host = self.headers.get('Host', '')
-            expected = f'127.0.0.1:{self.server.server_port}'
-            if host == expected and self.headers.get('Origin', 'http://' + expected) == 'http://' + expected:
+            if not self._trusted_request():
+                return False
+            expected = f'http://127.0.0.1:{self.server.server_port}'
+            org = getattr(app, 'org_accounts', None)
+            origins = self.headers.get_all('Origin', [])
+            if (org and origins == [org.origin]) or (not org and origins in ([], [expected])):
                 return True
             self.send({'error': 'Local same-origin requests only'}, 403)
             return False
@@ -1521,7 +1574,9 @@ def argument_parser():
                         help='Read an existing API batch without invoking models or evaluation')
     parser.add_argument('--workspace-db', type=Path, default=None,
                         help='Optional workspace metadata SQLite file. Omit to leave startup unchanged.')
-    parser.add_argument('--accounts-config', type=Path, help='Opt-in local per-account access configuration')
+    auth = parser.add_mutually_exclusive_group()
+    auth.add_argument('--accounts-config', type=Path, help='Opt-in local token accounts')
+    auth.add_argument('--org-config', type=Path, help='Private HTTPS organization gateway configuration')
     parser.add_argument('--port', type=int, default=8765)
     parser.add_argument('--queue-limit', type=int, default=8, help='Maximum waiting tasks')
     parser.add_argument('--run-timeout', type=float, default=600, help='Execution budget in seconds, excluding queue wait')
@@ -1532,7 +1587,8 @@ def main():
     args = argument_parser().parse_args()
     app = Observatory(args.data_dir, args.output_dir, args.metadata, args.history, args.analysis_dir,
                       args.recorded_batch, sources=args.sources, workspace_db=args.workspace_db,
-                      queue_limit=args.queue_limit, run_timeout=args.run_timeout, accounts_config=args.accounts_config)
+                      queue_limit=args.queue_limit, run_timeout=args.run_timeout, accounts_config=args.accounts_config,
+                      org_config=args.org_config, gateway_key=os.environ.get('SQL_STUDIO_GATEWAY_KEY'))
     server = ThreadingHTTPServer(('127.0.0.1', args.port), make_handler(app))
     landing = '/workspace/' if args.workspace_db else '/'
     print(f'SQL Agent Lab http://127.0.0.1:{server.server_port}{landing}', flush=True)

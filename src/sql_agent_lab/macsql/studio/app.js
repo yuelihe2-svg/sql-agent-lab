@@ -1057,7 +1057,7 @@
       detailsOpen: false,
       selectedRunId: null,
       activeRunId: null,
-      team: false, accountName: '', deleteMode: false, deleteSelection: new Set(),
+      team: false, accountName: '', organizationLogout: false, deleteMode: false, deleteSelection: new Set(),
       workspace: false,
       notice: '',
       error: '',
@@ -1201,6 +1201,10 @@
       });
     });
     signOut.addEventListener('click', function () {
+      if (state.organizationLogout) {
+        root.location.assign('/auth/logout');
+        return;
+      }
       navigate(async function () {
         await request('/api/session', undefined, 'DELETE');
         root.location.href = '/workspace/';
@@ -1519,6 +1523,7 @@
         state.sources = publicSources(catalog);
         state.team = catalog.workspace_limited === true;
         state.accountName = catalog.account?.name || '';
+        state.organizationLogout = catalog.account?.logout_path === '/auth/logout';
         try {
           await refreshList();
           state.workspace = true;

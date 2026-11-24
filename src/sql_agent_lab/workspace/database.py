@@ -20,7 +20,7 @@ from .models import (
 )
 
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 # One implicit local workspace. Restarts reuse this id instead of inserting another.
 LOCAL_WORKSPACE_ID = '5c6a1e0a-7b34-4d5e-9f10-0a1b2c3d4e5f'
 LOCAL_WORKSPACE_NAME = 'Local'
@@ -30,7 +30,7 @@ LOCAL_USER_NAME = 'Local'
 APP_TABLES = frozenset({
     'schema_migrations', 'workspace', 'app_user', 'membership', 'data_source',
     'data_source_grant', 'conversation', 'message', 'agent_run', 'audit_event',
-    'database_profile', 'knowledge_document', 'deleted_conversation', *FTS_TABLES,
+    'database_profile', 'knowledge_document', 'deleted_conversation', 'organization_identity', *FTS_TABLES,
 })
 # Columns that would copy a user database, a credential, or gold SQL.
 FORBIDDEN_COLUMNS = frozenset({
@@ -152,6 +152,12 @@ CREATE INDEX IF NOT EXISTS knowledge_by_source ON knowledge_document(datasource_
 CREATE TABLE IF NOT EXISTS deleted_conversation (
     conversation_id TEXT PRIMARY KEY REFERENCES conversation(id),
     deleted_at TEXT NOT NULL
+);
+"""), (6, """
+CREATE TABLE IF NOT EXISTS organization_identity (
+    issuer TEXT NOT NULL, subject TEXT NOT NULL,
+    user_id TEXT NOT NULL UNIQUE REFERENCES app_user(id),
+    PRIMARY KEY (issuer, subject)
 );
 """))
 
@@ -630,6 +636,30 @@ class WorkspaceStore:
                          (user_id, name, utc_now()))
             conn.execute("INSERT OR IGNORE INTO membership(workspace_id, user_id, role) VALUES (?, ?, 'analyst')",
                          (LOCAL_WORKSPACE_ID, user_id))
+
+    def register_organization_users(self, issuer, accounts):
+        """Prevent silently transferring an existing account to a different identity."""
+        with self._session() as conn:
+            for subject, account in accounts.items():
+                identity = conn.execute('SELECT issuer, subject FROM organization_identity WHERE user_id=?',
+                                        (account.id,)).fetchone()
+                if identity is not None and tuple(identity) != (issuer, subject):
+                    raise ValueError('An account ID is already bound to another organization identity')
+                binding = conn.execute('SELECT user_id FROM organization_identity WHERE issuer=? AND subject=?',
+                                       (issuer, subject)).fetchone()
+                if binding is not None and binding['user_id'] != account.id:
+                    raise ValueError('An organization identity already uses another account ID')
+                conn.execute('INSERT INTO app_user(id, display_name, created_at) VALUES (?, ?, ?) '
+                             'ON CONFLICT(id) DO UPDATE SET display_name=excluded.display_name',
+                             (account.id, account.name, utc_now()))
+                conn.execute("INSERT OR IGNORE INTO membership(workspace_id, user_id, role) VALUES (?, ?, 'analyst')",
+                             (LOCAL_WORKSPACE_ID, account.id))
+                conn.execute('INSERT OR IGNORE INTO organization_identity(issuer, subject, user_id) VALUES (?, ?, ?)',
+                             (issuer, subject, account.id))
+
+    def has_organization_users(self):
+        with self._session() as conn:
+            return conn.execute('SELECT 1 FROM organization_identity LIMIT 1').fetchone() is not None
 
     def has_team_users(self):
         with self._session() as conn:

@@ -116,6 +116,53 @@ Set-Clipboard -Value $alice.token
 
 打开 `http://127.0.0.1:8785/workspace/`，粘贴令牌登录。在另一浏览器配置文件或退出后用 Bob 的令牌复测。令牌应通过受控渠道交给对应成员，避免写入项目或聊天记录。多人库后续启动或恢复都要显式提供账号配置，避免误切回无登录模式。该模式仍绑定本机回环地址，面向本地验收。团队远程部署还需接入组织身份认证和 HTTPS。
 
+## 私有 HTTPS 网关与组织登录
+
+组织模式使用 `--org-config`，与本地测试令牌模式互斥。Studio 继续监听
+`127.0.0.1`。前置的组织登录网关负责完成 OIDC、终止 TLS 和维护浏览器会话。
+这一模式的服务端授权通过离线 HTTPS 代理验收，实际组织身份服务的连接需要在私有环境另行验证。
+
+**网关接入约定**
+
+- 只向获邀成员开放 HTTPS 地址。网关必须先验证组织会话（包括发行方、客户端和回调状态），使用已验证的 OIDC `sub` 作为身份。应用通过配置将该身份绑定到固定的 Studio UUID。
+- 对转发至 Studio 的请求，由网关覆盖以下四个请求头，丢弃浏览器提供的同名头。转发的 `Host` 固定为实际本机监听地址 `127.0.0.1:端口`。写请求保留浏览器的 `Origin`，Studio 会要求它严格匹配配置中的 HTTPS 地址。
+
+  | 请求头 | 网关设置 |
+  |---|---|
+  | `X-SQL-Studio-Gateway-Key` | 服务端共享随机密钥，与 Studio 环境变量相同 |
+  | `X-SQL-Studio-Issuer` | 已验证的 OIDC issuer |
+  | `X-SQL-Studio-Subject` | 已验证的 OIDC subject |
+  | `X-Forwarded-Proto` | `https` |
+
+- 网关处理 `/auth/logout`。退出时应撤销网关会话、清除浏览器会话 Cookie，再回到组织登录入口。应用不会签发第二份会话。网关应采用 Secure、HttpOnly Cookie，并避免记录或返回共享密钥。
+- 只让网关连接本机后端。网关保护整个站点及接口，团队成员通过 HTTPS 入口访问。
+  将真实发行方、回调、证书和入站白名单配置到私有环境后，再用两位真实账号复验。
+
+将以下结构保存为仓库外的 `org.json`。每个账号一条记录，换成实际的 UUID、subject 和数据源 ID。共享密钥通过受控方式分别配置到网关与 Studio 的 `SQL_STUDIO_GATEWAY_KEY` 环境变量，使用至少 32 个随机 URL 安全字符。
+
+```json
+{
+  "origin": "https://studio.example.internal",
+  "issuer": "https://login.example.internal",
+  "accounts": [
+    {
+      "id": "2aae8387-5e46-4ee4-9420-071eb2405787",
+      "subject": "verified-opaque-subject",
+      "name": "Alice",
+      "sources": ["shop"]
+    }
+  ]
+}
+```
+
+```powershell
+.\.venv\Scripts\python.exe -m sql_agent_lab.macsql.live_ui --sources D:/sql-agent-data/sources.json --output-dir D:/sql-agent-data/org-runs --workspace-db D:/sql-agent-data/org.sqlite --org-config D:/sql-agent-data/org.json --port 8786
+```
+
+**撤权与恢复：** 原子替换 `org.json`，从账号的 `sources` 移除数据源，或从 `accounts` 删除账号。保留的网关会话在后续请求上也会失去对应访问权，已保存的对话链接同样失效。排队任务在实际执行前再次核对授权。已开始的任务可能完成，撤权后无法通过应用再读取结果。后端绑定记录禁止把同一个 UUID 改配给另一个组织身份。该模式的工作区在重启和备份恢复后仍需使用 `--org-config`。变更 issuer、HTTPS 地址或共享密钥时重启服务。
+
+**离线验收：** `tests/test_organization_gateway.py` 使用 OpenSSL 生成临时本地证书，通过真实 TLS 代理运行两个合成账号，覆盖登录、退出、撤权、旧链接以及禁止绕过网关。测试不接入实际 OIDC 服务。未安装 OpenSSL 的环境会跳过这条 TLS 测试。
+
 ## 本地工作区备份与恢复
 
 先关闭使用该工作区的服务，备份期间避免修改业务库、工作区和运行目录。下面以三个仓库外路径为例，备份和恢复目的目录都必须是新目录。
