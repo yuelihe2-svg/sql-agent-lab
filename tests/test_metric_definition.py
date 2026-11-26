@@ -76,3 +76,22 @@ def test_invalid_duplicate_and_removed_definitions(workspace):
     assert ask(app, "shop")["rows"] == [[900]]
     app.delete_source_knowledge("shop", second["id"])
     assert ask(app, "shop")["needs_clarification"]
+
+def test_percentage_uses_same_year_denominator_and_requires_order_grain():
+    from sql_agent_lab.workspace.metric_definition import PaidTotal, paid_order_percentage_year
+    question = '计算2027年已付款订单数占同年所有订单数，以百分比表示'
+    assert paid_order_percentage_year(question) == '2027'
+    assert paid_order_percentage_year(question.replace('同年', '历年')) is None
+    assert paid_order_percentage_year('原问题：算一下订单转化率。\n用户补充：' + question) == '2027'
+    assert paid_order_percentage_year('原问题：杭州门店的订单转化率？\n用户补充：' + question) is None
+    profile = {'tables': [{'name': 'orders', 'primary_key': ['order_id']}]}
+    metric = PaidTotal(**SHOP)
+    with closing(sqlite3.connect(':memory:')) as conn:
+        conn.execute('create table orders(order_id integer primary key, year int, status text)')
+        conn.executemany('insert into orders(year,status) values(?,?)', [
+            (2027, 'paid'), (2027, 'pending'), (2026, 'paid')])
+        assert conn.execute(metric.percentage_sql('2027', profile)).fetchone() == (50.0,)
+        assert conn.execute(metric.percentage_sql('2020', profile)).fetchone() == (None,)
+    profile['tables'][0]['primary_key'] = ['line_id']
+    with pytest.raises(ValueError, match='唯一标识'):
+        metric.percentage_sql('2027', profile)

@@ -77,3 +77,12 @@ def test_candidate_comparison_keeps_literal_values_and_requires_one_statement():
     assert not matches_followup_sql(expected.replace('New  York', 'New York'), expected)
     assert not matches_followup_sql(expected + '; SELECT 1', expected)
     assert not matches_followup_sql(expected.replace(' AND ', ' OR '), expected)
+
+def test_natural_filter_replacements_use_scoped_city_and_explicit_status_code():
+    turns = [{'sql': SQL}]
+    city_sql = resolve_filter_followup('那杭州呢？', turns, lookup_city=lambda t, v: (t, v) == ('orders', '杭州'))[1]
+    assert city_sql == QueryState(SQL).replace_filter('city', '杭州')
+    assert resolve_filter_followup('杭州改成2023年呢？', [{'sql': city_sql}])[1] == QueryState(city_sql).replace_filter('year', '2023')
+    assert resolve_filter_followup('如果状态改为等待付款（pending），其他条件不变呢？', turns)[1] == QueryState(SQL).replace_filter('status', 'pending')
+    assert resolve_filter_followup('那去年呢？', turns, lookup_city=lambda t, v: False)[1] is None
+    assert resolve_filter_followup('杭州改成2023年呢？', turns)[1] is None

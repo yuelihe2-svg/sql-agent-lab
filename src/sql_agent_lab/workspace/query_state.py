@@ -81,9 +81,31 @@ def matches_followup_sql(candidate, expected):
         return False
 
 
-def resolve_filter_followup(question, turns):
+def resolve_filter_followup(question, turns, *, lookup_city=None):
     """Return the prompt text and the expected SQL for an explicit change."""
-    match = _CHANGE.fullmatch(re.sub(r"[，,]其余条件不变[。！!]*$", "", question.strip()))
+    text = re.sub(r"[，,](?:其他|其余)条件不变[呢？?。！!]*$", "", question.strip())
+    state = QueryState.from_turns(turns)
+    city = re.fullmatch(r"那([\u4e00-\u9fff]{2,16})呢[？?。]*", text)
+    anchored = re.fullmatch(r"([\u4e00-\u9fff]{2,16})(?:改成|改为|换成)([12][0-9]{3})年(?:呢)?[？?。]*", text)
+    if state and (city or anchored):
+        # Resolve an unnamed dimension only against a literal city predicate
+        # in the latest scoped SQL, and a value from that same table.
+        try:
+            tree = _single_statement(state.sql)
+            tables = list(tree.find_all(exp.Table))
+            value = (city or anchored)[1]
+            if len(tables) == 1:
+                replaced = state.replace_filter("city", value)
+                if anchored and matches_followup_sql(replaced, state.sql):
+                    text = "年份改为" + anchored[2]
+                elif city and lookup_city and lookup_city(tables[0].name, value):
+                    text = "城市改为" + value
+        except (ValueError, SqlglotError):
+            pass
+    status = re.fullmatch(r"(?:如果)?状态(?:改为|改成|换成)[\u4e00-\u9fff]+[（(]([A-Za-z0-9_-]{1,40})[）)]", text)
+    if status:
+        text = "状态改为" + status[1]
+    match = _CHANGE.fullmatch(text)
     if not match:
         return question, None
     label, value = match.groups()
@@ -98,7 +120,6 @@ def resolve_filter_followup(question, turns):
         value = year[1]
     elif not re.fullmatch(r"[\w\u4e00-\u9fff-]{1,40}", value):
         raise NeedsClarification("请补充完整条件：请明确一个城市或状态值，多项修改请给出完整查询条件。")
-    state = QueryState.from_turns(turns)
     try:
         if state is None:
             raise ValueError("missing state")

@@ -15,7 +15,7 @@ SQL_LIMIT = 500
 DEFAULT_BUDGET_BYTES = 1600
 _PATH = re.compile(r'(?:[A-Za-z]:[\\/][^\s\'"]+|/(?:Users|home|tmp|var|opt)[^\s\'"]+)')
 _NEW_TOPIC = (
-    '新问题', '另问', '另外问', '换个问题', '换一个问题', '重新问',
+    '新问题', '另问', '另外问', '换个问题', '换一个问题', '换个话题', '换一个话题', '重新问',
     '不要沿用', '与上面无关', '跟上面无关',
 )
 _NEW_TOPIC_EN = ('new question', 'start over', 'ignore the previous')

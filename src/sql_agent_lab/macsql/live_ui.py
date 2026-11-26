@@ -927,7 +927,11 @@ class Observatory:
                 retry_metric = paid_total_year(text) and paid_total_year(previous['body'])
                 if not retry_metric:
                     text = '原问题：' + previous['body'][:1000] + '\n用户补充：' + text
-        text, expected_sql = resolve_filter_followup(text, context['turns'])
+        def known_city(table, value):
+            tools = SQLiteTools({question.db_id: self.databases[question.db_id]}, cancelled=self.stop.is_set)
+            values = tools.lookup_values(question.db_id, table, 'city', value)
+            return value in values.get('values', ())
+        text, expected_sql = resolve_filter_followup(text, context['turns'], lookup_city=known_city)
         if text != question.question:
             # Derived state and clarification supplements share the history budget.
             if len(text.encode('utf-8')) > context['budget']['limit']:
@@ -937,7 +941,7 @@ class Observatory:
         emit({'event': 'conversation_context_attached', 'budget': context['budget']})
         return replace(question, question=text), context['history_block'], expected_sql
 
-    def _configured_paid_total(self, datasource_id, year):
+    def _configured_paid_metric(self, datasource_id, year, metric_name):
         from sql_agent_lab.workspace.answer_checks import NeedsClarification
         from sql_agent_lab.workspace.metric_definition import PAID_TOTAL_TITLE, PaidTotal
         documents = [doc for doc in self.list_source_knowledge(datasource_id)['knowledge']
@@ -947,10 +951,16 @@ class Observatory:
         if len(documents) != 1:
             raise NeedsClarification('当前数据库有多份已付款订单总金额配置，请在「数据库介绍」中只保留一份。')
         document = documents[0]
+        profile = self.refresh_profile(datasource_id)
         try:
-            metric = PaidTotal.from_document(document['format'], document['body'], self.refresh_profile(datasource_id))
+            metric = PaidTotal.from_document(document['format'], document['body'], profile)
         except ValueError as error:
             raise NeedsClarification('请更新当前数据库的已付款订单总金额配置。' + str(error)) from None
+        if metric_name == 'paid_order_percentage':
+            try:
+                return metric.percentage_sql(year, profile)
+            except ValueError as error:
+                raise NeedsClarification(str(error)) from None
         return metric.sql(year)
 
     def _work(self, run_id, question, reference, manifest):
@@ -996,13 +1006,15 @@ class Observatory:
                     result.update(status='completed', answer=answer)
                     return result
                 from sql_agent_lab.workspace.initial_query_checks import initial_intent
-                from sql_agent_lab.workspace.metric_definition import paid_total_year
+                from sql_agent_lab.workspace.metric_definition import paid_order_percentage_year, paid_total_year
                 original_text = question.question
                 question, history_block, expected_sql = self._prepare_followup(
                     manifest['conversation_id'], run_id, question, emit)
                 year = paid_total_year(question.question)
-                if year:
-                    metric_sql = self._configured_paid_total(question.db_id, year)
+                percent_year = paid_order_percentage_year(question.question)
+                if year or percent_year:
+                    metric_name = 'paid_order_percentage' if percent_year else 'paid_order_total'
+                    metric_sql = self._configured_paid_metric(question.db_id, year or percent_year, metric_name)
                 else:
                     initial_check = initial_intent(original_text)
             if self.stop.is_set():
@@ -1021,7 +1033,7 @@ class Observatory:
                 feedback = observed.compile_sql_readonly(question.db_id, metric_sql)
                 if feedback['status'] == 'ok':
                     feedback = observed.execute_sql_readonly(question.db_id, metric_sql)
-                emit({'event': 'configured_metric_executed', 'metric': 'paid_order_total', 'status': feedback['status']})
+                emit({'event': 'configured_metric_executed', 'metric': metric_name, 'status': feedback['status']})
                 result.update(sql=metric_sql, feedback=feedback,
                               status='completed' if feedback['status'] == 'ok' else 'failed')
                 return result
@@ -1041,14 +1053,21 @@ class Observatory:
                 agent.grounding_block = manifest.get('grounding_block') or ''
                 agent.conversation_block = history_block
                 agent_started = time.perf_counter()
-                if hasattr(agent, 'run_with_feedback'):
-                    sql, feedback = agent.run_with_feedback(question)
-                else:
-                    # Older adapters return only SQL. Apply the same strict prepare check.
-                    sql = agent.run(question)
-                    if self.stop.is_set():
-                        raise Stopped('Stopped after the scheduled operation completed')
-                    feedback = None
+                from .reference_core import RoleOutputError
+                try:
+                    if hasattr(agent, 'run_with_feedback'):
+                        sql, feedback = agent.run_with_feedback(question)
+                    else:
+                        # Older adapters return only SQL. Apply the same strict prepare check.
+                        sql = agent.run(question)
+                        if self.stop.is_set():
+                            raise Stopped('Stopped after the scheduled operation completed')
+                        feedback = None
+                except RoleOutputError:
+                    if expected_sql is None:
+                        raise
+                    # The scoped filter replacement still has to compile and execute.
+                    sql, feedback = None, None
                 if expected_sql is not None:
                     from sql_agent_lab.workspace.query_state import matches_followup_sql
                     matches = matches_followup_sql(sql, expected_sql)

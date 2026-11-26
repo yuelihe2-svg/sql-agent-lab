@@ -191,3 +191,26 @@ def test_explicit_filter_state_reaches_agent_and_is_scoped(tmp_path, monkeypatch
         assert result['needs_clarification']
         assert result['sql'] is None
         assert len(requests) == count
+
+def test_city_followup_survives_malformed_model_reply(tmp_path, monkeypatch):
+    import sqlite3
+    from contextlib import closing
+    from sql_agent_lab.macsql.reference_core import RoleOutputError
+
+    app = build(tmp_path, monkeypatch)
+    with closing(sqlite3.connect(app.databases['shop'])) as conn:
+        conn.execute('CREATE TABLE orders(year INTEGER, city TEXT, amount INTEGER)')
+        conn.executemany('INSERT INTO orders VALUES (?,?,?)', [
+            (2024, '上海', 12), (2024, '杭州', 37), (2023, '杭州', 81)])
+        conn.commit()
+    def behavior(config, question):
+        if question.question.startswith('那'):
+            raise RoleOutputError('No SQL block')
+        return "SELECT SUM(amount) FROM orders WHERE year=2024 AND city='上海'"
+    app.behavior = behavior
+    cid = app.create_conversation({'datasource_id': 'shop'})['id']
+    for question, expected in [('统计2024年上海订单总金额', 12), ('那杭州呢？', 37)]:
+        app.worker_done.clear()
+        app.post_conversation_message(cid, {'question': question})
+        wait_done(app)
+        assert app.conversation_detail(cid)['runs'][-1]['result']['rows'] == [[expected]]

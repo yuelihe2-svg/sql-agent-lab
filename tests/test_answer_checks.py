@@ -30,3 +30,10 @@ def test_year_followup_preserves_group_order_and_limit():
     for clause in ("'2023'", 'GROUP BY', 'HAVING', 'ORDER BY', 'DESC', 'LIMIT 3', 'OFFSET 1'):
         assert clause in resolved
     assert '2024' not in resolved
+
+def test_ambiguous_business_questions_request_the_missing_definition():
+    assert '指标' in clarification('哪个城市表现最好？', [])
+    assert '分母' in clarification('给我算一下订单转化率。', [])
+    assert '指哪些记录' in clarification('这些一共有几笔？', [])
+    assert clarification('这些一共有几笔？', [{'sql': 'SELECT 1'}]) is None
+    assert clarification('按已付款订单数除以全部订单数计算转化率。', []) is None

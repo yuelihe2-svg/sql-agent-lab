@@ -16,6 +16,21 @@ def paid_total_year(question):
     return match[1] if match else None
 
 
+def paid_order_percentage_year(question):
+    """Only a fully specified single-year numerator, denominator and unit."""
+    if question.startswith("原问题："):
+        from .answer_checks import unspecified_conversion_rate
+        original, sep, supplement = question.partition("\n用户补充：")
+        if not sep or not unspecified_conversion_rate(original.removeprefix("原问题：")):
+            return None
+        question = supplement
+    match = re.fullmatch(
+        r"(?:我的定义是|定义为|(?:请)?(?:计算|统计))?\s*([12][0-9]{3})年(?:的)?已付款订单(?:数|数量)"
+        r"(?:除以|占)(?:当年|同年)(?:全部|所有)订单(?:数|数量)[，,]?(?:用|以|按)百分比(?:表示|展示)?[。？?]?",
+        question.strip())
+    return match[1] if match else None
+
+
 @dataclass(frozen=True)
 class PaidTotal:
     table: str
@@ -59,3 +74,14 @@ class PaidTotal:
         paid = exp.convert(self.paid_value).sql(dialect="sqlite")
         return (f'SELECT SUM({amount}) AS total_paid_amount FROM {table} '
                 f'WHERE {year_column} = {int(year)} AND {status} = {paid}')
+
+    def percentage_sql(self, year, profile):
+        from sql_agent_lab.macsql.tools import quote_identifier
+        table = next(t for t in profile['tables'] if t['name'] == self.table)
+        if [key.lower() for key in table['primary_key']] != ['order_id']:
+            raise ValueError('请说明如何唯一标识一笔订单，以便核对分子和分母的去重口径。')
+        status = quote_identifier(self.status_column)
+        paid = exp.convert(self.paid_value).sql(dialect="sqlite")
+        return (f'SELECT 100.0 * SUM(CASE WHEN {status} = {paid} THEN 1 ELSE 0 END) '
+                f'/ NULLIF(COUNT(*), 0) AS "已付款订单占比（%）" FROM {quote_identifier(self.table)} '
+                f'WHERE {quote_identifier(self.year_column)} = {int(year)}')

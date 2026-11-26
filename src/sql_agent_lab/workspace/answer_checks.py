@@ -9,12 +9,23 @@ class NeedsClarification(Exception):
 _YEAR_CHANGE = re.compile(r'\s*(?:改成|换成|改为)([12][0-9]{3})年(?:呢)?[？?。]*\s*')
 
 
+def unspecified_conversion_rate(question):
+    return re.fullmatch(r'\s*(?:请)?(?:给我|帮我)?(?:统计|计算|算|查|看)(?:一下)?(?:订单|销售|支付)?转化率[？?。！!]*\s*', question) is not None
+
+
 def clarification(question, turns):
     if re.fullmatch(r'\s*(?:请)?(?:帮我)?(?:看看|查询|查看|统计)(?:一下)?'
                     r'(?:去年|今年|上个月|本月|[12][0-9]{3}年)的?销售(?:情况|表现)?[？?。！!]*\s*', question):
         return '你想看销售总金额、订单数量，还是按月的销售趋势？'
+    if re.fullmatch(r'\s*(?:请问)?(?:哪个|哪些)(?:城市|地区|门店|商品|渠道)(?:的)?表现最好[？?。！!]*\s*', question):
+        return '你希望按哪个指标比较表现，例如已付款金额还是订单数？请说明时间范围。'
+    if unspecified_conversion_rate(question):
+        return '请说明转化率的分子和分母，例如已付款订单数占全部订单数，或下单访客数占全部访客数。要统计哪个时间范围？'
     # A follow-up without an antecedent must not invent a metric or filters.
     usable = any(t.get('sql') for t in turns)
+    if not usable and re.fullmatch(
+            r"\s*(?:这些|那些|它们)(?:一共|总共)?(?:有)?(?:几|多少)(?:笔|条|个|件)[？?。！!]*\s*", question):
+        return '你说的“这些”指哪些记录？请补充要计数的对象和筛选范围。'
     if not usable and (_YEAR_CHANGE.fullmatch(question) or re.fullmatch(
             r"\s*(?:那.{1,30}呢|它们呢|这些呢|再按.{1,30}|按刚才.{0,30})[？?。！!]*\s*", question)):
         return '你想查询什么指标、哪个时间范围？当前没有可参考的查询，请补充完整条件。'
