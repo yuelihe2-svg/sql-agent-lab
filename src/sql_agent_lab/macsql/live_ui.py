@@ -647,7 +647,7 @@ class Observatory:
         from sql_agent_lab.workspace.knowledge import create_knowledge
         return create_knowledge(
             self._workspace(), self.workspace_db, source_id,
-            payload.get('title'), payload.get('format'), payload.get('body'))
+            payload.get('title'), payload.get('format'), payload.get('body'), file_data=payload.get('file_data'))
 
     def update_source_knowledge(self, source_id, knowledge_id, payload):
         self._source_record(source_id)
@@ -657,7 +657,7 @@ class Observatory:
         return update_knowledge(
             self._workspace(), self.workspace_db, source_id, knowledge_id,
             payload.get('title'), payload.get('format'), payload.get('body'),
-            expected_version=payload.get('expected_version'))
+            expected_version=payload.get('expected_version'), file_data=payload.get('file_data'))
 
     def delete_source_knowledge(self, source_id, knowledge_id):
         self._source_record(source_id)
@@ -1209,7 +1209,7 @@ _CLIENT_LOCATIONS = frozenset({
     'path', 'paths', 'filename', 'file', 'directory', 'storage_key', 'uri', 'url',
 })
 # A supplementary Unicode character can occupy twelve bytes in escaped JSON.
-_KNOWLEDGE_REQUEST_BYTES = 300 * 1024
+_KNOWLEDGE_REQUEST_BYTES = 7 * 1024 * 1024
 
 
 def _use_grounding(payload):
@@ -1436,13 +1436,22 @@ def make_handler(app):
                     if source_kind == 'knowledge_item':
                         doc = app.get_source_knowledge(source_id, knowledge_id)
                         if url.query:
-                            from sql_agent_lab.workspace.reference_docs import passages
+                            from sql_agent_lab.workspace.reference_docs import document_passages
                             params = parse_qs(url.query)
                             if params.get('version') != [str(doc['version'])]:
                                 return self.send({'error': '资料版本已变更，请重新提问。'}, 409)
                             locator = params.get('passage', [''])[0]
-                            for index, (location, text) in enumerate(passages(doc['format'], doc['body'])):
+                            for index, (location, text) in enumerate(document_passages(doc)):
                                 if str(index) == locator:
+                                    if params.get('original') == ['pdf']:
+                                        from sql_agent_lab.workspace.knowledge import original_pdf
+                                        data = original_pdf(app._workspace(), app.workspace_db, source_id,
+                                                            knowledge_id, str(doc['version']))
+                                        return self.send(data, content_type='application/pdf')
+                                    if doc['title'].lower().endswith('.docx'):
+                                        from sql_agent_lab.workspace.office_docs import word_preview
+                                        return self.send(word_preview(doc, document_passages(doc), index),
+                                                         content_type='text/html')
                                     preview = f"{doc['title']} · v{doc['version']} · {location}\n\n{text}\n\n全文\n{doc['body']}"
                                     return self.send(preview.encode(), content_type='text/plain')
                             return self.send({'error': '原文位置不存在。'}, 404)

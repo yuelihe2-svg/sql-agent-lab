@@ -21,6 +21,12 @@ py -3.13 -m venv .venv
 
 脚本会运行工作区、用户页和观察台的 Node 检查，以及完整的 pytest 套件。已安装 Playwright 和 Edge 时，可另运行 `python tests/browser_workspace_smoke.py --channel msedge --python .venv/Scripts/python.exe`，在临时空库中走一次上传、澄清、查询、复制 SQL、下载 CSV 和刷新恢复。
 
+## 导入 Word 和 PDF 参考资料
+
+在当前数据源的「数据库介绍」选择「导入参考资料文件」。DOCX 使用 Word 标题样式定位章节，普通表格保留表号、行号与首行字段。点击 Word 引用可打开当前版本的提取文本并定位到对应段落或表格行。文本型 PDF 的引用打开保存的原件并指定物理页码。两种引用沿用数据源权限和文档版本检查。
+
+PDF 导入需要本机 PATH 中的 Poppler `pdftotext`，可用 `pdftotext -v` 检查。单个文件上限为 5 MiB，PDF 最多 120 页，提取后的引用文本和位置合计沿用 24,000 字符的存储上限。扫描页与无文本页需要先 OCR 或移除；Word 合并单元格及嵌套表格需要先整理为普通表格。同名文件可通过再次上传更新版本。
+
 ## 网页
 
 本机已配置路径时，在项目根目录运行 `./start-web.ps1`。该脚本读取被 Git 忽略的 `.local/web-config.json`；其他机器可复制 `web-config.example.json` 后填写自己的目录。

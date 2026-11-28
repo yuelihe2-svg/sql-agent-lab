@@ -5,7 +5,9 @@ and are not inserted into the SQL Agent prompt.
 """
 from contextlib import contextmanager
 from pathlib import Path
+import base64
 import hashlib
+from .office_docs import EXTENSIONS, extract
 import json
 import logging
 import re
@@ -44,8 +46,8 @@ def _document_operation():
 
 
 @_document_operation()
-def create_knowledge(store, workspace_db, datasource_id, title, document_format, body):
-    title, document_format, body = _validate(title, document_format, body)
+def create_knowledge(store, workspace_db, datasource_id, title, document_format, body, *, file_data=None):
+    title, document_format, body, stored = _prepare(title, document_format, body, file_data)
     store.get_data_source(datasource_id)
     now = utc_now()
     key = uuid.uuid4().hex
@@ -55,7 +57,7 @@ def create_knowledge(store, workspace_db, datasource_id, title, document_format,
         'datasource_id': datasource_id,
         'title': title,
         'format': document_format,
-        'content_hash': _hash(body),
+        'content_hash': _hash(stored),
         'version': 1,
         'provenance': 'user',
         'storage_key': key,
@@ -63,7 +65,7 @@ def create_knowledge(store, workspace_db, datasource_id, title, document_format,
         'updated_at': now,
     }
     directory = knowledge_dir(workspace_db)
-    path = _write_body(directory, key, body)
+    path = _write_body(directory, key, stored)
     try:
         store.insert_knowledge(record, body=body)
     except Exception:
@@ -74,8 +76,8 @@ def create_knowledge(store, workspace_db, datasource_id, title, document_format,
 
 @_document_operation()
 def update_knowledge(store, workspace_db, datasource_id, knowledge_id, title, document_format, body,
-                     *, expected_version=None):
-    title, document_format, body = _validate(title, document_format, body)
+                     *, expected_version=None, file_data=None):
+    title, document_format, body, stored = _prepare(title, document_format, body, file_data)
     current = store.get_knowledge_row(datasource_id, knowledge_id)
     directory = knowledge_dir(workspace_db)
     if expected_version is not None and (type(expected_version) is not int or expected_version != current['version']):
@@ -86,12 +88,12 @@ def update_knowledge(store, workspace_db, datasource_id, knowledge_id, title, do
         'datasource_id': datasource_id,
         'title': title,
         'format': document_format,
-        'content_hash': _hash(body),
+        'content_hash': _hash(stored),
         'version': current['version'] + 1,
         'storage_key': uuid.uuid4().hex,
         'updated_at': utc_now(),
     }
-    path = _write_body(directory, updated['storage_key'], body)
+    path = _write_body(directory, updated['storage_key'], stored)
     try:
         store.update_knowledge(updated, body=body)
     except Exception:
@@ -158,6 +160,24 @@ def reindex_knowledge(store, workspace_db):
     return {'indexed': len(rows), 'status': 'rebuilt'}
 
 
+_ENVELOPE = '\x00office-reference-v1\n'
+
+
+def _prepare(title, fmt, body, encoded):
+    if encoded is not None:
+        if not isinstance(title, str):
+            raise ValueError('缺少文件名。')
+        body = extract(title, encoded)
+        title, fmt, body = _validate(title, 'json', body)
+        stored = _ENVELOPE + json.dumps([body, encoded], ensure_ascii=False)
+    else:
+        if isinstance(title, str) and Path(title).suffix.lower() in EXTENSIONS:
+            raise ValueError('请重新上传原文件以更新此资料。')
+        title, fmt, body = _validate(title, fmt, body)
+        stored = body
+    return title, fmt, body, stored
+
+
 def _validate(title, document_format, body):
     if not isinstance(title, str) or not title.strip() or title != title.strip():
         raise ValueError('title is required')
@@ -167,6 +187,8 @@ def _validate(title, document_format, body):
         raise ValueError('format is not supported')
     if not isinstance(body, str) or not body.strip():
         raise ValueError('body is required')
+    if body.startswith(_ENVELOPE):
+        raise ValueError('无效的正文。')
     if len(body) > BODY_LIMIT:
         raise ValueError('body is too long')
     if document_format == 'json':
@@ -219,7 +241,7 @@ def _discard_body(path):
         logging.getLogger(__name__).warning('An unreferenced knowledge file could not be removed')
 
 
-def _read_body(directory, row):
+def _read_stored(directory, row):
     path = _document_path(directory, row['storage_key'])
     if not path.is_file():
         raise ValueError('Knowledge document is missing')
@@ -227,6 +249,21 @@ def _read_body(directory, row):
     if _hash(body) != row['content_hash']:
         raise ValueError('Knowledge document does not match its record')
     return body
+
+
+def _read_body(directory, row):
+    stored = _read_stored(directory, row)
+    return json.loads(stored[len(_ENVELOPE):])[0] if stored.startswith(_ENVELOPE) else stored
+
+
+def original_pdf(store, workspace_db, source, key, version):
+    row = store.get_knowledge_row(source, key)
+    if str(row['version']) != version or not row['title'].lower().endswith('.pdf'):
+        raise ValueError('原文件版本已变更或不可用。')
+    stored = _read_stored(knowledge_dir(workspace_db), row)
+    if not stored.startswith(_ENVELOPE):
+        raise ValueError('未保存 PDF 原件。')
+    return base64.b64decode(json.loads(stored[len(_ENVELOPE):])[1], validate=True)
 
 
 def _public(row, body):

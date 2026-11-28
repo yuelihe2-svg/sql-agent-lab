@@ -7,8 +7,8 @@ from pathlib import PurePath
 
 from .retrieval import _tokens
 
-FORMATS = {'.md': 'markdown', '.txt': 'text', '.json': 'json'}
-_DOC = re.compile(r'资料|文档|政策|条款|手册|字典|规定|规则|口径|报销.{0,12}(?:标准|上限|每天)|(?:能否|能不能|能|可以|允许).{0,12}退货(?:吗|[？?])|怎么定义|是什么意思|如何定义|什么是|由谁承担|谁承担|能否退|能退吗|可以退吗')
+FORMATS = {'.md': 'markdown', '.txt': 'text', '.json': 'json', '.docx': 'json', '.pdf': 'json'}
+_DOC = re.compile(r'资料|文档|政策|条款|手册|指南|细则|字典|规定|规则|口径|报销.{0,12}(?:标准|上限|每天)|(?:能否|能不能|能|可以|允许).{0,12}退货(?:吗|[？?])|怎么定义|是什么意思|如何定义|什么是|由谁承担|谁承担|能否退|能退吗|可以退吗')
 _FORMULA = re.compile(r'怎么算|如何计算|怎么计算|计算公式')
 _DATA = re.compile(r'(?:统计|算出|计算|汇总|列出订单|排名|总共多少|(?:多少|几)(?:笔|单|条订单)|(?:查询|列出|[12][0-9]{3}年|上月|本月).{0,24}(?:总金额|订单数|实收额)|查一下订单)')
 _FILLER = re.compile(r'请问|根据|参考|资料|文档|政策|手册|条款|规定|字典|是否|可以|怎么|如何|定义|什么|意思|请查|里面|有没有|目前|哪些|关于|说明|提到|按照|一下|告诉我|口径')
@@ -28,6 +28,15 @@ def validate_reference(title, fmt, body):
             list(passages(fmt, body))
         except RecursionError:
             raise ValueError('JSON 嵌套过深。') from None
+
+
+def document_passages(doc):
+    if doc['title'].lower().endswith(('.pdf', '.docx')) and doc['format'] == 'json':
+        parts = json.loads(doc['body'])
+        if isinstance(parts, dict) and all(isinstance(value, str) for value in parts.values()):
+            yield from parts.items()
+            return
+    yield from passages(doc['format'], doc['body'])
 
 
 def passages(fmt, body):
@@ -101,7 +110,7 @@ def reference_answer(question, load_documents):
     frequencies = Counter()
     passage_count = 0
     for doc in files:
-        for index, (location, text) in enumerate(passages(doc['format'], doc['body'])):
+        for index, (location, text) in enumerate(document_passages(doc)):
             content = (location + ' ' + text).lower()
             if scope is not None:
                 condition, subject, actions = scope

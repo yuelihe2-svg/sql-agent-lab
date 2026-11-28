@@ -401,6 +401,9 @@
       link.href = '/api/sources/' + encodeURIComponent(citation.datasource_id) + '/knowledge/' +
         encodeURIComponent(citation.id) + '?version=' + encodeURIComponent(citation.version) +
         '&passage=' + encodeURIComponent(citation.passage);
+      const page = /^第 (\d+) 页/.exec(citation.location);
+      if (page && /\.pdf$/i.test(citation.title)) link.href += '&original=pdf#page=' + page[1];
+      if (/\.docx$/i.test(citation.title)) link.href += '#p-' + encodeURIComponent(citation.passage);
       link.target = '_blank';
       link.rel = 'noopener';
       summary.append(doc.createElement('br'), link);
@@ -908,7 +911,7 @@
         el(doc, 'p', 'prose', item.title),
         el(doc, 'p', 'quiet', ui('版本 ') + item.version + ui(' · 来源：用户提供')),
         el(doc, 'p', 'unverified', ui('用户提供／未经核实')),
-        el(doc, 'p', 'prose', item.body)
+        el(doc, 'p', 'prose', referenceDisplay(item))
       );
       const edit = el(doc, 'button', 'text-action', ui('编辑'));
       edit.type = 'button';
@@ -916,11 +919,23 @@
       const remove = el(doc, 'button', 'text-action', ui('删除'));
       remove.type = 'button';
       remove.addEventListener('click', function () { handlers.remove(item); });
-      if (!model.readOnly) card.append(edit, remove);
+      if (!model.readOnly) {
+        if (!/\.(pdf|docx)$/i.test(item.title)) card.append(edit);
+        card.append(remove);
+      }
       knowledge.append(card);
     });
     root.append(knowledge);
     return root;
+  }
+
+  function referenceDisplay(item) {
+    if (item.format === 'json' && /\.(pdf|docx)$/i.test(item.title)) {
+      return Object.entries(JSON.parse(item.body)).map(function ([location, text]) {
+        return location + '　' + text;
+      }).join('\n');
+    }
+    return item.body;
   }
 
   function renderKnowledgeForm(doc, state, handlers) {
@@ -955,24 +970,35 @@
     if (!draft.id) {
       const upload = el(doc, 'input');
       upload.type = 'file';
-      upload.accept = '.txt,.md,.json';
-      const label = locale === 'en' ? 'Import shared reference (UTF-8)' : '导入共享参考资料（UTF-8）';
+      upload.accept = '.txt,.md,.json,.docx,.pdf';
+      const label = locale === 'en' ? 'Import reference file' : '导入参考资料文件';
       const feedback = el(doc, 'p', 'quiet', locale === 'en' ? 'Visible to everyone with access to this source.' : '导入后，对有权访问此数据库的用户可见。');
       feedback.setAttribute('role', 'status');
       upload.addEventListener('change', async function () {
         const file = upload.files[0];
         if (!file) return;
         try {
-          const kind = {txt: 'text', md: 'markdown', json: 'json'}[file.name.split('.').pop().toLowerCase()];
-          if (!kind || file.size > 96003) throw Error(locale === 'en' ? 'Unsupported file or size.' : '格式不支持或文件过大。');
-          const text = new TextDecoder('utf-8', {fatal: true}).decode(await file.arrayBuffer());
+          const kind = {txt: 'text', md: 'markdown', json: 'json', docx: 'docx', pdf: 'pdf'}[file.name.split('.').pop().toLowerCase()];
+          const binary = kind === 'docx' || kind === 'pdf';
+          if (!kind || file.size > (binary ? 5 * 1024 * 1024 : 96003)) throw Error(locale === 'en' ? 'Unsupported file or size.' : '格式不支持或文件过大。');
+          let text = '', fileData;
+          if (binary) {
+            fileData = await new Promise(function (resolve, reject) {
+              const reader = new FileReader();
+              reader.onload = function () { resolve(reader.result.split(',')[1]); };
+              reader.onerror = function () { reject(reader.error); };
+              reader.readAsDataURL(file);
+            });
+          } else {
+            text = new TextDecoder('utf-8', {fatal: true}).decode(await file.arrayBuffer());
+          }
           if (Array.from(text).length > 24000) throw Error(locale === 'en' ? 'Maximum 24,000 characters.' : '最多支持 24000 个字符。');
           if (!form.isConnected) return;
           const sameName = (state.overview.knowledge || []).filter(function (doc) { return doc.title === file.name; });
           if (sameName.length > 1) throw Error(locale === 'en' ? 'Multiple files share that name. Edit the intended entry.' : '已有多份同名资料，请选择对应资料进行编辑。');
           const existing = sameName[0];
           if (existing && !doc.defaultView.confirm(locale === 'en' ? 'Update this reference to a new version?' : '用此文件更新同名资料的版本？')) return;
-          await handlers.saveKnowledge({title: file.name, format: kind, body: text,
+          await handlers.saveKnowledge({title: file.name, format: kind, body: text, file_data: fileData,
             id: existing && existing.id, version: existing && existing.version});
         } catch (error) { feedback.textContent = error.message; }
         upload.value = '';
@@ -1749,7 +1775,7 @@
           const path = draft.id
             ? '/api/sources/' + id + '/knowledge/' + encodeURIComponent(draft.id)
             : '/api/sources/' + id + '/knowledge';
-          await request(path, { title: draft.title.trim(), format: draft.format, body: draft.body,
+          await request(path, { title: draft.title.trim(), format: draft.format, body: draft.body, file_data: draft.file_data,
             expected_version: draft.version }, draft.id ? 'PUT' : 'POST');
           state.draft = null;
           await loadOverview();
