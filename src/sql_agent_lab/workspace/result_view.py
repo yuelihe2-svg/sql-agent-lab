@@ -19,7 +19,7 @@ _SQL = 20000
 VIEW_FIELDS = (
     'summary', 'state', 'stage', 'execution_status', 'sql', 'columns', 'rows',
     'preview', 'has_more', 'truncated', 'complete', 'error', 'elapsed_seconds',
-    'tokens', 'evaluated', 'grounding', 'needs_clarification',
+    'tokens', 'evaluated', 'grounding', 'needs_clarification', 'citations',
 )
 
 
@@ -51,6 +51,7 @@ def public_result(directory, *, state, stage, result, task_error=None):
         summary += '\n' + query_basis(sql)
     return {
         'summary': summary,
+        'citations': loaded.get('citations', []),
         'needs_clarification': isinstance(loaded.get('clarification'), str) and bool(loaded['clarification']),
         'state': state if isinstance(state, str) else 'unknown',
         'stage': stage if isinstance(stage, str) and _STAGE.fullmatch(stage) else None,

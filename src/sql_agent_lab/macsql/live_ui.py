@@ -1000,6 +1000,12 @@ class Observatory:
             metric_sql = None
             if manifest.get('conversation_context_enabled'):
                 from sql_agent_lab.workspace.chat_intent import direct_answer
+                from sql_agent_lab.workspace.reference_docs import reference_answer
+                document_answer = reference_answer(question.question,
+                    lambda: self.list_source_knowledge(question.db_id)['knowledge'])
+                if document_answer:
+                    result.update(status='completed', **document_answer)
+                    return result
                 answer = direct_answer(question.question, lambda: self.refresh_profile(question.db_id),
                     lambda: self.list_source_knowledge(question.db_id)['knowledge'])
                 if answer:
@@ -1428,7 +1434,19 @@ def make_handler(app):
                     if source_kind == 'knowledge':
                         return self.send(app.list_source_knowledge(source_id))
                     if source_kind == 'knowledge_item':
-                        return self.send(app.get_source_knowledge(source_id, knowledge_id))
+                        doc = app.get_source_knowledge(source_id, knowledge_id)
+                        if url.query:
+                            from sql_agent_lab.workspace.reference_docs import passages
+                            params = parse_qs(url.query)
+                            if params.get('version') != [str(doc['version'])]:
+                                return self.send({'error': '资料版本已变更，请重新提问。'}, 409)
+                            locator = params.get('passage', [''])[0]
+                            for index, (location, text) in enumerate(passages(doc['format'], doc['body'])):
+                                if str(index) == locator:
+                                    preview = f"{doc['title']} · v{doc['version']} · {location}\n\n{text}\n\n全文\n{doc['body']}"
+                                    return self.send(preview.encode(), content_type='text/plain')
+                            return self.send({'error': '原文位置不存在。'}, 404)
+                        return self.send(doc)
                     return self.send(app.source_context(source_id))
                 self.send({'error': 'Not found'}, 404)
             except AccessDenied:

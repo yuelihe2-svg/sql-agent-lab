@@ -176,6 +176,8 @@ def _validate(title, document_format, body):
             raise ValueError('json knowledge must be valid JSON') from error
         if not isinstance(parsed, (dict, list)):
             raise ValueError('json knowledge must be an object or array')
+    from .reference_docs import validate_reference
+    validate_reference(title, document_format, body)
     return title, document_format, body
 
 

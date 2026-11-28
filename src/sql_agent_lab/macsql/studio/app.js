@@ -301,6 +301,7 @@
         role: 'assistant',
         id: run.id,
         body: displaySummary(run),
+        citations: view.citations || [],
         clarification: view.needs_clarification === true,
         needsReview: view.execution_status === 'needs_review',
         timedOut: view.error === '本次处理超时，可以缩小查询范围后重试。',
@@ -395,6 +396,15 @@
         : value === '' ? 'The result is an empty string.' : 'Result: ' + cellText(value).text + '.';
     }
     const summary = el(doc, 'p', 'prose answer-summary', shownAnswer);
+    (item.citations || []).forEach(function (citation, index) {
+      const link = el(doc, 'a', 'text-action', '[' + (index + 1) + '] ' + citation.title + ' · v' + citation.version + ' · ' + citation.location);
+      link.href = '/api/sources/' + encodeURIComponent(citation.datasource_id) + '/knowledge/' +
+        encodeURIComponent(citation.id) + '?version=' + encodeURIComponent(citation.version) +
+        '&passage=' + encodeURIComponent(citation.passage);
+      link.target = '_blank';
+      link.rel = 'noopener';
+      summary.append(doc.createElement('br'), link);
+    });
     if (item.state === 'failed') {
       const wrap = el(doc, 'div', 'failure');
       wrap.append(summary);
@@ -886,7 +896,7 @@
 
     const knowledge = el(doc, 'section', 'overview-block');
     knowledge.append(
-      el(doc, 'h2', null, ui('业务知识')),
+      el(doc, 'h2', null, locale === 'en' ? 'Reference materials' : '参考资料'),
       el(doc, 'p', 'unverified', ui('用户提供，未经核验。这些说明不是数据库已经核对过的事实。'))
     );
     if (!model.knowledge.length) {
@@ -943,6 +953,31 @@
     const save = el(doc, 'button', 'send', draft.id ? ui('保存修改') : ui('添加知识'));
     save.type = 'submit';
     if (!draft.id) {
+      const upload = el(doc, 'input');
+      upload.type = 'file';
+      upload.accept = '.txt,.md,.json';
+      const label = locale === 'en' ? 'Import shared reference (UTF-8)' : '导入共享参考资料（UTF-8）';
+      const feedback = el(doc, 'p', 'quiet', locale === 'en' ? 'Visible to everyone with access to this source.' : '导入后，对有权访问此数据库的用户可见。');
+      feedback.setAttribute('role', 'status');
+      upload.addEventListener('change', async function () {
+        const file = upload.files[0];
+        if (!file) return;
+        try {
+          const kind = {txt: 'text', md: 'markdown', json: 'json'}[file.name.split('.').pop().toLowerCase()];
+          if (!kind || file.size > 96003) throw Error(locale === 'en' ? 'Unsupported file or size.' : '格式不支持或文件过大。');
+          const text = new TextDecoder('utf-8', {fatal: true}).decode(await file.arrayBuffer());
+          if (Array.from(text).length > 24000) throw Error(locale === 'en' ? 'Maximum 24,000 characters.' : '最多支持 24000 个字符。');
+          if (!form.isConnected) return;
+          const sameName = (state.overview.knowledge || []).filter(function (doc) { return doc.title === file.name; });
+          if (sameName.length > 1) throw Error(locale === 'en' ? 'Multiple files share that name. Edit the intended entry.' : '已有多份同名资料，请选择对应资料进行编辑。');
+          const existing = sameName[0];
+          if (existing && !doc.defaultView.confirm(locale === 'en' ? 'Update this reference to a new version?' : '用此文件更新同名资料的版本？')) return;
+          await handlers.saveKnowledge({title: file.name, format: kind, body: text,
+            id: existing && existing.id, version: existing && existing.version});
+        } catch (error) { feedback.textContent = error.message; }
+        upload.value = '';
+      });
+      form.append(labeled(label, upload), feedback);
       const template = el(doc, 'button', 'secondary', ui('填入指标口径模板'));
       template.type = 'button';
       template.addEventListener('click', function () {
